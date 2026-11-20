@@ -18,7 +18,6 @@
     </a>
     <nav class="toolbar" aria-label="Site navigation">
       <a class="nav-link" href="./">Lab</a>
-      <a class="nav-link" href="./method.html" aria-current="page">Jacobian method</a>
     </nav>
   </header>
   <main class="method-layout">
@@ -28,8 +27,10 @@
         <a href="#workflow">Run an analysis</a>
         <a href="#hardpoints">Hardpoints and projects</a>
         <a href="#constraints">Mechanism constraints</a>
+        <a href="#profiles">Drive profiles</a>
         <a href="#position">Position</a>
         <a href="#derivatives">Velocity and acceleration</a>
+        <a href="#example">Worked example</a>
         <a href="#results">Reading results</a>
         <a href="#sweeps">Suspension sweeps</a>
       </nav>
@@ -42,13 +43,12 @@
       <section id="workflow">
         <h2>Run an analysis</h2>
         <ol>
-          <li>Use <strong>Import CSV / JSON</strong> to open a study, or choose <strong>Load example</strong> in <strong>More project actions</strong>. Inspect the static geometry in <strong>3D motion</strong>.</li>
+          <li>At the bottom of the left settings panel, use <strong>Import CSV / JSON</strong> to open a study, or choose <strong>Load example</strong> in <strong>More project actions</strong>. Inspect the static geometry in <strong>3D motion</strong>.</li>
           <li>Use <strong>Hardpoints &amp; tires</strong> to edit coordinates, tire dimensions, static toe and camber, and pushrod mounts. To study damper travel, use <strong>Deformable members</strong> to add a member and attach each endpoint to the chassis or to a defined rocker.</li>
-          <li>Set a duration, sample count, and motion profile for each wheel or rack drive. Positive wheel travel is bump, meaning the wheel moves up relative to the chassis. Positive rack travel follows the axis from the right rack point toward the left one. A model with a single front rack point uses +Y.</li>
+          <li>Open <strong>Wheel travel &amp; steering</strong> to set a duration, sample count, and motion profile for each wheel or rack drive, then choose <strong>Apply motion</strong>. Positive wheel travel is bump, meaning the wheel moves up relative to the chassis. Positive rack travel follows the axis from the right rack point toward the left one. A model with a single front rack point uses +Y.</li>
           <li>Choose <strong>Solve kinematics</strong>. Use the timeline, chart, or results table to inspect a sample and select points or rods in the 3D view to follow their motion.</li>
           <li>Use <strong>Download JSON</strong> or <strong>Download CSV project</strong> to resume a study later. Open <strong>Export results</strong> to download solved histories as CSV files.</li>
         </ol>
-        <p>Each drive starts at zero and uses one of three profiles. <strong>Pulse</strong> goes smoothly to the signed amplitude and back to zero. <strong>Sine</strong> runs a full positive and negative cycle. <strong>Ramp</strong> reaches the signed amplitude at constant speed over the selected duration.</p>
       </section>
 
       <section id="hardpoints">
@@ -73,51 +73,344 @@
         <p>The mechanism maps hardpoint names to <code>fixed</code> points, distance <code>links</code>, rigid <code>attachments</code>, and projected displacement <code>drives</code>. A link with <code>constrained: false</code> is available for display and measurement. A drive with <code>locked: true</code> holds its projection at the reference value. Its optional <code>b</code> field changes the projection from a single point to the separation between two points.</p>
       </section>
 
+      <!-- Display equations are pre-rendered from the TeX in their MathML annotations. -->
       <section id="constraints">
         <h2>Mechanism constraints</h2>
-        <p>Let <var>q</var> collect the XYZ displacements of every moving point from its reference coordinates. Fixed points have zero displacement. Let <var>u</var>(<var>t</var>) contain the prescribed drive displacements. The solver assembles the following equations into a residual vector <var>F</var>(<var>q</var>, <var>u</var>).</p>
-        <ul>
-          <li><strong>Rigid links.</strong> For a link with axis <strong>r</strong> = <strong>p</strong><sub>B</sub> − <strong>p</strong><sub>A</sub> and reference length <var>L</var>, the residual is (<strong>r</strong> · <strong>r</strong> − <var>L</var><sup>2</sup>) / (2<var>L</var>).</li>
-          <li><strong>Rigid attachments.</strong> Three non-collinear anchors carry a marker point. With <strong>e</strong> = <strong>p</strong><sub>B</sub> − <strong>p</strong><sub>A</sub> and <strong>f</strong> = <strong>p</strong><sub>C</sub> − <strong>p</strong><sub>A</sub>, its position is <strong>p</strong><sub>A</sub> + <var>a</var><strong>e</strong> + <var>b</var><strong>f</strong> + <var>c</var>(<strong>e</strong> × <strong>f</strong>). The coefficients come from the reference geometry. This lets an out-of-plane pushrod or damper mounting point follow its body.</li>
-          <li><strong>Displacement drives.</strong> Each drive subtracts its target displacement from the projection of one point’s displacement, or of the displacement difference between two points, onto a prescribed direction.</li>
-        </ul>
-        <p>The Jacobian <var>J</var> = ∂<var>F</var>/∂<var>q</var> describes how each residual changes when the moving coordinates change. The solver evaluates its rows from the current pose.</p>
+        <p>The unknown vector <var>q</var> stacks the XYZ displacements of all moving points. A fixed point has zero displacement. The solver adds each displacement to the point’s reference position.</p>
+        <div class="method-equation">
+          <math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics>
+              <mrow><msub><mi mathvariant="bold-italic">p</mi><mi>i</mi></msub><mo>=</mo><msub><mi mathvariant="bold-italic">p</mi><mrow><mi>i</mi><mo separator="true">,</mo><mn>0</mn></mrow></msub><mo>+</mo><msub><mi mathvariant="bold-italic">q</mi><mi>i</mi></msub><mo separator="true">,</mo><mspace width="2em"/><mi mathvariant="bold-italic">q</mi><mo>=</mo><msup><mrow><mo fence="true">[</mo><mtable rowspacing="0.16em" columnalign="center center center" columnspacing="1em"><mtr><mtd><mstyle scriptlevel="0" displaystyle="false"><msubsup><mi mathvariant="bold-italic">q</mi><mn>1</mn><mi mathvariant="sans-serif">T</mi></msubsup></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="false"><mo lspace="0em" rspace="0em">⋯</mo></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="false"><msubsup><mi mathvariant="bold-italic">q</mi><mi>n</mi><mi mathvariant="sans-serif">T</mi></msubsup></mstyle></mtd></mtr></mtable><mo fence="true">]</mo></mrow><mi mathvariant="sans-serif">T</mi></msup></mrow>
+              <annotation encoding="application/x-tex">\boldsymbol{p}_i=\boldsymbol{p}_{i,0}+\boldsymbol{q}_i,
+          \qquad
+          \boldsymbol{q}=
+          \begin{bmatrix}\boldsymbol{q}_1^{\mathsf T}&amp;\cdots&amp;\boldsymbol{q}_n^{\mathsf T}\end{bmatrix}^{\mathsf T}</annotation>
+            </semantics>
+          </math>
+        </div>
+        <h3>Rigid links</h3>
+        <p>For a link from A to B, the current axis is <strong>r</strong> and the reference length is <var>L</var>. The normalized squared-distance residual is zero when the rod keeps its reference length.</p>
+        <div class="method-equation">
+          <math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics>
+              <mtable rowspacing="0.25em" columnalign="right left" columnspacing="0em"><mtr><mtd><mstyle scriptlevel="0" displaystyle="true"><mi mathvariant="bold-italic">r</mi></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mrow></mrow><mo>=</mo><msub><mi mathvariant="bold-italic">p</mi><mi>B</mi></msub><mo>−</mo><msub><mi mathvariant="bold-italic">p</mi><mi>A</mi></msub><mo separator="true">,</mo></mrow></mstyle></mtd></mtr><mtr><mtd><mstyle scriptlevel="0" displaystyle="true"><mi>L</mi></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mrow></mrow><mo>=</mo><mo stretchy="false">∥</mo><msub><mi mathvariant="bold-italic">p</mi><mrow><mi>B</mi><mo separator="true">,</mo><mn>0</mn></mrow></msub><mo>−</mo><msub><mi mathvariant="bold-italic">p</mi><mrow><mi>A</mi><mo separator="true">,</mo><mn>0</mn></mrow></msub><mo stretchy="false">∥</mo><mo separator="true">,</mo></mrow></mstyle></mtd></mtr><mtr><mtd><mstyle scriptlevel="0" displaystyle="true"><msub><mi>F</mi><mrow><mi mathvariant="normal">l</mi><mi mathvariant="normal">i</mi><mi mathvariant="normal">n</mi><mi mathvariant="normal">k</mi></mrow></msub></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mrow></mrow><mo>=</mo><mfrac><mrow><mi mathvariant="bold-italic">r</mi><mo>⋅</mo><mi mathvariant="bold-italic">r</mi><mo>−</mo><msup><mi>L</mi><mn>2</mn></msup></mrow><mrow><mn>2</mn><mi>L</mi></mrow></mfrac><mi mathvariant="normal">.</mi></mrow></mstyle></mtd></mtr></mtable>
+              <annotation encoding="application/x-tex">\begin{aligned}
+          \boldsymbol{r}&amp;=\boldsymbol{p}_B-\boldsymbol{p}_A,\\
+          L&amp;=\lVert\boldsymbol{p}_{B,0}-\boldsymbol{p}_{A,0}\rVert,\\
+          F_{\mathrm{link}}&amp;=\frac{\boldsymbol{r}\cdot\boldsymbol{r}-L^2}{2L}.
+          \end{aligned}</annotation>
+            </semantics>
+          </math>
+        </div>
+        <p>Differentiating this residual gives two three-coordinate blocks. Blocks for fixed points are dropped from the solved Jacobian.</p>
+        <div class="method-equation">
+          <math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics>
+              <mrow><mfrac><mrow><mi mathvariant="normal">∂</mi><msub><mi>F</mi><mrow><mi mathvariant="normal">l</mi><mi mathvariant="normal">i</mi><mi mathvariant="normal">n</mi><mi mathvariant="normal">k</mi></mrow></msub></mrow><mrow><mi mathvariant="normal">∂</mi><msub><mi mathvariant="bold-italic">q</mi><mi>A</mi></msub></mrow></mfrac><mo>=</mo><mo>−</mo><mfrac><msup><mi mathvariant="bold-italic">r</mi><mi mathvariant="sans-serif">T</mi></msup><mi>L</mi></mfrac><mo separator="true">,</mo><mspace width="2em"/><mfrac><mrow><mi mathvariant="normal">∂</mi><msub><mi>F</mi><mrow><mi mathvariant="normal">l</mi><mi mathvariant="normal">i</mi><mi mathvariant="normal">n</mi><mi mathvariant="normal">k</mi></mrow></msub></mrow><mrow><mi mathvariant="normal">∂</mi><msub><mi mathvariant="bold-italic">q</mi><mi>B</mi></msub></mrow></mfrac><mo>=</mo><mo>+</mo><mfrac><msup><mi mathvariant="bold-italic">r</mi><mi mathvariant="sans-serif">T</mi></msup><mi>L</mi></mfrac></mrow>
+              <annotation encoding="application/x-tex">\frac{\partial F_{\mathrm{link}}}{\partial\boldsymbol{q}_A}
+          =-\frac{\boldsymbol{r}^{\mathsf T}}{L},
+          \qquad
+          \frac{\partial F_{\mathrm{link}}}{\partial\boldsymbol{q}_B}
+          =+\frac{\boldsymbol{r}^{\mathsf T}}{L}</annotation>
+            </semantics>
+          </math>
+        </div>
+        <h3>Rigid attachments</h3>
+        <p>Three non-collinear anchors A, B, and C carry the marker M. The solver first finds the local coefficients <var>a</var>, <var>b</var>, and <var>c</var> from the reference geometry. It then keeps those coefficients fixed as the anchor vectors move. The cross-product term lets the marker sit out of the anchor plane.</p>
+        <div class="method-equation">
+          <math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics>
+              <mtable rowspacing="0.25em" columnalign="right left" columnspacing="0em"><mtr><mtd><mstyle scriptlevel="0" displaystyle="true"><mi mathvariant="bold-italic">e</mi></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mrow></mrow><mo>=</mo><msub><mi mathvariant="bold-italic">p</mi><mi>B</mi></msub><mo>−</mo><msub><mi mathvariant="bold-italic">p</mi><mi>A</mi></msub><mo separator="true">,</mo><mspace width="2em"/><mi mathvariant="bold-italic">f</mi><mo>=</mo><msub><mi mathvariant="bold-italic">p</mi><mi>C</mi></msub><mo>−</mo><msub><mi mathvariant="bold-italic">p</mi><mi>A</mi></msub><mo separator="true">,</mo></mrow></mstyle></mtd></mtr><mtr><mtd><mstyle scriptlevel="0" displaystyle="true"><msub><mi>E</mi><mn>0</mn></msub></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mrow></mrow><mo>=</mo><mo stretchy="false">[</mo><msub><mi mathvariant="bold-italic">e</mi><mn>0</mn></msub><mtext> </mtext><msub><mi mathvariant="bold-italic">f</mi><mn>0</mn></msub><mtext> </mtext><msub><mi mathvariant="bold-italic">e</mi><mn>0</mn></msub><mo>×</mo><msub><mi mathvariant="bold-italic">f</mi><mn>0</mn></msub><mo stretchy="false">]</mo><mo separator="true">,</mo></mrow></mstyle></mtd></mtr><mtr><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><msub><mi mathvariant="bold-italic">p</mi><mrow><mi>M</mi><mo separator="true">,</mo><mn>0</mn></mrow></msub><mo>−</mo><msub><mi mathvariant="bold-italic">p</mi><mrow><mi>A</mi><mo separator="true">,</mo><mn>0</mn></mrow></msub></mrow></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mrow></mrow><mo>=</mo><msub><mi>E</mi><mn>0</mn></msub><mrow><mo fence="true">[</mo><mtable rowspacing="0.16em" columnalign="center" columnspacing="1em"><mtr><mtd><mstyle scriptlevel="0" displaystyle="false"><mi>a</mi></mstyle></mtd></mtr><mtr><mtd><mstyle scriptlevel="0" displaystyle="false"><mi>b</mi></mstyle></mtd></mtr><mtr><mtd><mstyle scriptlevel="0" displaystyle="false"><mi>c</mi></mstyle></mtd></mtr></mtable><mo fence="true">]</mo></mrow><mo separator="true">,</mo></mrow></mstyle></mtd></mtr><mtr><mtd><mstyle scriptlevel="0" displaystyle="true"><msub><mi mathvariant="bold-italic">F</mi><mrow><mi mathvariant="normal">a</mi><mi mathvariant="normal">t</mi><mi mathvariant="normal">t</mi><mi mathvariant="normal">a</mi><mi mathvariant="normal">c</mi><mi mathvariant="normal">h</mi></mrow></msub></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mrow></mrow><mo>=</mo><msub><mi mathvariant="bold-italic">p</mi><mi>M</mi></msub><mo>−</mo><msub><mi mathvariant="bold-italic">p</mi><mi>A</mi></msub><mo>−</mo><mi>a</mi><mi mathvariant="bold-italic">e</mi><mo>−</mo><mi>b</mi><mi mathvariant="bold-italic">f</mi></mrow></mstyle></mtd></mtr><mtr><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow></mrow></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mrow></mrow><mspace width="1em"/><mo>−</mo><mi>c</mi><mo stretchy="false">(</mo><mi mathvariant="bold-italic">e</mi><mo>×</mo><mi mathvariant="bold-italic">f</mi><mo stretchy="false">)</mo><mi mathvariant="normal">.</mi></mrow></mstyle></mtd></mtr></mtable>
+              <annotation encoding="application/x-tex">\begin{aligned}
+              \boldsymbol{e}&amp;=\boldsymbol{p}_B-\boldsymbol{p}_A,\qquad
+              \boldsymbol{f}=\boldsymbol{p}_C-\boldsymbol{p}_A,\\
+              E_0&amp;=[\boldsymbol{e}_0\ \boldsymbol{f}_0\ \boldsymbol{e}_0\times\boldsymbol{f}_0],\\
+              \boldsymbol{p}_{M,0}-\boldsymbol{p}_{A,0}
+                &amp;=E_0\begin{bmatrix}a\\b\\c\end{bmatrix},\\
+              \boldsymbol{F}_{\mathrm{attach}}
+                &amp;=\boldsymbol{p}_M-\boldsymbol{p}_A-a\boldsymbol{e}-b\boldsymbol{f}\\
+                &amp;\quad-c(\boldsymbol{e}\times\boldsymbol{f}).
+              \end{aligned}</annotation>
+            </semantics>
+          </math>
+        </div>
+        <h3>Displacement drives</h3>
+        <p>A drive uses a unit direction <strong>d</strong> and a prescribed scalar displacement <var>u</var>. When there is a second point Q, the drive measures the displacement of P relative to Q. A single-point drive omits the Q term.</p>
+        <div class="method-equation">
+          <math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics>
+              <mrow><msub><mi>F</mi><mrow><mi mathvariant="normal">d</mi><mi mathvariant="normal">r</mi><mi mathvariant="normal">i</mi><mi mathvariant="normal">v</mi><mi mathvariant="normal">e</mi></mrow></msub><mo>=</mo><mi mathvariant="bold-italic">d</mi><mo>⋅</mo><mo stretchy="false">(</mo><msub><mi mathvariant="bold-italic">q</mi><mi>P</mi></msub><mo>−</mo><msub><mi mathvariant="bold-italic">q</mi><mi>Q</mi></msub><mo stretchy="false">)</mo><mo>−</mo><mi>u</mi><mo stretchy="false">(</mo><mi>t</mi><mo stretchy="false">)</mo></mrow>
+              <annotation encoding="application/x-tex">F_{\mathrm{drive}}
+          =\boldsymbol{d}\cdot(\boldsymbol{q}_P-\boldsymbol{q}_Q)-u(t)</annotation>
+            </semantics>
+          </math>
+        </div>
+        <p>The solver stacks the link, attachment, and drive residuals into <strong>F</strong>. The matrix <var>B</var> places each drive input in its own residual row. At every trial pose, the solver evaluates <var>J</var> from the current link axes and attachment geometry.</p>
+        <div class="method-equation">
+          <math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics>
+              <mtable rowspacing="0.25em" columnalign="right left" columnspacing="0em"><mtr><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mi mathvariant="bold-italic">F</mi><mo stretchy="false">(</mo><mi mathvariant="bold-italic">q</mi><mo separator="true">,</mo><mi>t</mi><mo stretchy="false">)</mo></mrow></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mrow></mrow><mo>=</mo><mi mathvariant="bold-italic">G</mi><mo stretchy="false">(</mo><mi mathvariant="bold-italic">q</mi><mo stretchy="false">)</mo><mo>−</mo><mi>B</mi><mi mathvariant="bold-italic">u</mi><mo stretchy="false">(</mo><mi>t</mi><mo stretchy="false">)</mo><mo separator="true">,</mo></mrow></mstyle></mtd></mtr><mtr><mtd><mstyle scriptlevel="0" displaystyle="true"><msub><mi>J</mi><mrow><mi>i</mi><mi>j</mi></mrow></msub></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mrow></mrow><mo>=</mo><mfrac><mrow><mi mathvariant="normal">∂</mi><msub><mi>F</mi><mi>i</mi></msub></mrow><mrow><mi mathvariant="normal">∂</mi><msub><mi>q</mi><mi>j</mi></msub></mrow></mfrac><mi mathvariant="normal">.</mi></mrow></mstyle></mtd></mtr></mtable>
+              <annotation encoding="application/x-tex">\begin{aligned}
+          \boldsymbol{F}(\boldsymbol{q},t)&amp;=\boldsymbol{G}(\boldsymbol{q})-B\boldsymbol{u}(t),\\
+          J_{ij}&amp;=\frac{\partial F_i}{\partial q_j}.
+          \end{aligned}</annotation>
+            </semantics>
+          </math>
+        </div>
+      </section>
+
+      <section id="profiles">
+        <h2>Drive profiles</h2>
+        <p>Let <var>A</var> be the signed amplitude in metres, <var>T</var> the duration in seconds, and <var>ω</var> = 2π/<var>T</var>. Write <var>φ</var> = <var>ωt</var> for the phase. The pulse reverses direction at half duration. The sine completes one cycle and the ramp moves at constant speed. The program evaluates displacement, speed, and acceleration analytically at each sample time.</p>
+        <div class="method-equation">
+          <math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics>
+              <mtable rowspacing="0.16em" columnalign="center center center center" columnlines="solid none none" columnspacing="1em" rowlines="solid none none"><mtr><mtd><mstyle scriptlevel="0" displaystyle="false"><mtext>Profile</mtext></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="false"><mi>u</mi></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="false"><mover accent="true"><mi>u</mi><mo>˙</mo></mover></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="false"><mover accent="true"><mi>u</mi><mo>¨</mo></mover></mstyle></mtd></mtr><mtr><mtd><mstyle scriptlevel="0" displaystyle="false"><mtext>Pulse</mtext></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="false"><mrow><mfrac><mi>A</mi><mn>2</mn></mfrac><mo stretchy="false">(</mo><mn>1</mn><mo>−</mo><mi>cos</mi><mo>⁡</mo><mi>ϕ</mi><mo stretchy="false">)</mo></mrow></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="false"><mrow><mfrac><mrow><mi>A</mi><mi>ω</mi></mrow><mn>2</mn></mfrac><mi>sin</mi><mo>⁡</mo><mi>ϕ</mi></mrow></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="false"><mrow><mfrac><mrow><mi>A</mi><msup><mi>ω</mi><mn>2</mn></msup></mrow><mn>2</mn></mfrac><mi>cos</mi><mo>⁡</mo><mi>ϕ</mi></mrow></mstyle></mtd></mtr><mtr><mtd><mstyle scriptlevel="0" displaystyle="false"><mtext>Sine</mtext></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="false"><mrow><mi>A</mi><mi>sin</mi><mo>⁡</mo><mi>ϕ</mi></mrow></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="false"><mrow><mi>A</mi><mi>ω</mi><mi>cos</mi><mo>⁡</mo><mi>ϕ</mi></mrow></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="false"><mrow><mo>−</mo><mi>A</mi><msup><mi>ω</mi><mn>2</mn></msup><mi>sin</mi><mo>⁡</mo><mi>ϕ</mi></mrow></mstyle></mtd></mtr><mtr><mtd><mstyle scriptlevel="0" displaystyle="false"><mtext>Ramp</mtext></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="false"><mrow><mi>A</mi><mi>t</mi><mi mathvariant="normal">/</mi><mi>T</mi></mrow></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="false"><mrow><mi>A</mi><mi mathvariant="normal">/</mi><mi>T</mi></mrow></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="false"><mn>0</mn></mstyle></mtd></mtr></mtable>
+              <annotation encoding="application/x-tex">\begin{array}{c|ccc}
+              \text{Profile} &amp; u &amp; \dot{u} &amp; \ddot{u}\\
+              \hline
+              \text{Pulse} &amp; \tfrac{A}{2}(1-\cos\phi)
+                &amp; \tfrac{A\omega}{2}\sin\phi &amp; \tfrac{A\omega^2}{2}\cos\phi\\
+              \text{Sine} &amp; A\sin\phi &amp; A\omega\cos\phi &amp; -A\omega^2\sin\phi\\
+              \text{Ramp} &amp; At/T &amp; A/T &amp; 0
+              \end{array}</annotation>
+            </semantics>
+          </math>
+        </div>
       </section>
 
       <section id="position">
         <h2>Position</h2>
-        <div class="method-equation" role="math" aria-label="J times delta q equals minus F"><var>J</var> Δ<var>q</var> = −<var>F</var></div>
-        <p>Starting from the static assembly, the solver uses a least-squares Newton correction Δ<var>q</var>. It reduces the correction when necessary to make the residual smaller and subdivides drive changes to trace the same assembly branch. Once the constraints converge, the solved displacement is added to the static coordinates to give absolute XYZ position.</p>
-        <p>The reference and solved poses must have enough independent constraints to determine every moving coordinate. An underconstrained setup, a near-singular pose, or incompatible travel can stop the solve.</p>
+        <p>At a fixed drive target, the solver linearizes <strong>F</strong> about the current position estimate <strong>q</strong><sub>k</sub>. Setting that approximation to zero gives the Newton correction. The desktop solver computes the correction by least squares, which also handles redundant constraints.</p>
+        <div class="method-equation">
+          <math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics>
+              <mtable rowspacing="0.25em" columnalign="center" columnspacing="0em"><mtr><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mi mathvariant="bold-italic">F</mi><mo stretchy="false">(</mo><msub><mi mathvariant="bold-italic">q</mi><mi>k</mi></msub><mo>+</mo><mi mathvariant="normal">Δ</mi><mi mathvariant="bold-italic">q</mi><mo separator="true">,</mo><mi>t</mi><mo stretchy="false">)</mo><mo>≈</mo><msub><mi mathvariant="bold-italic">F</mi><mi>k</mi></msub><mo>+</mo><msub><mi>J</mi><mi>k</mi></msub><mi mathvariant="normal">Δ</mi><mi mathvariant="bold-italic">q</mi><mo separator="true">,</mo></mrow></mstyle></mtd></mtr><mtr><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mi mathvariant="normal">Δ</mi><msub><mi mathvariant="bold-italic">q</mi><mi>k</mi></msub><mo>=</mo><mi><munder><mo><mi mathvariant="normal">arg min</mi><mo>⁡</mo></mo><mi mathvariant="bold-italic">d</mi></munder></mi><mtext> </mtext><mo stretchy="false">∥</mo><msub><mi>J</mi><mi>k</mi></msub><mi mathvariant="bold-italic">d</mi><mo>+</mo><msub><mi mathvariant="bold-italic">F</mi><mi>k</mi></msub><msub><mo stretchy="false">∥</mo><mn>2</mn></msub><mo separator="true">,</mo></mrow></mstyle></mtd></mtr><mtr><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><msub><mi mathvariant="bold-italic">q</mi><mrow><mi>k</mi><mo>+</mo><mn>1</mn></mrow></msub><mo>=</mo><msub><mi mathvariant="bold-italic">q</mi><mi>k</mi></msub><mo>+</mo><mi>λ</mi><mtext> </mtext><mi mathvariant="normal">Δ</mi><msub><mi mathvariant="bold-italic">q</mi><mi>k</mi></msub><mi mathvariant="normal">.</mi></mrow></mstyle></mtd></mtr></mtable>
+              <annotation encoding="application/x-tex">\begin{gathered}
+              \boldsymbol{F}(\boldsymbol{q}_k+\Delta\boldsymbol{q},t)
+                \approx \boldsymbol{F}_k+J_k\Delta\boldsymbol{q},\\
+              \Delta\boldsymbol{q}_k
+                =\underset{\boldsymbol{d}}{\operatorname{arg\,min}}\,
+                  \lVert J_k\boldsymbol{d}+\boldsymbol{F}_k\rVert_2,\\
+              \boldsymbol{q}_{k+1}=\boldsymbol{q}_k+\lambda\,\Delta\boldsymbol{q}_k.
+              \end{gathered}</annotation>
+            </semantics>
+          </math>
+        </div>
+        <p>The program tests a full step first, then halves <var>λ</var> until the residual norm decreases. It checks both the residual and the correction against the position tolerance. The solver starts at the static assembly and subdivides changes in drive displacement as needed to stay on the same assembly branch.</p>
+        <p>For the solved pose, a reduced singular value decomposition gives the linear solve used for derivatives. With full column rank, the condition number is the ratio of the largest to the smallest singular value. The rank check counts singular values above 10<sup>−7</sup> times the largest. Too few independent constraints or a near-singular pose stops the solve.</p>
+        <div class="method-equation">
+          <math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics>
+              <mtable rowspacing="0.25em" columnalign="right left" columnspacing="0em"><mtr><mtd><mstyle scriptlevel="0" displaystyle="true"><mi>J</mi></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mrow></mrow><mo>=</mo><mi>U</mi><mi mathvariant="normal">Σ</mi><msup><mi>V</mi><mi mathvariant="sans-serif">T</mi></msup><mo separator="true">,</mo></mrow></mstyle></mtd></mtr><mtr><mtd><mstyle scriptlevel="0" displaystyle="true"><msup><mi>J</mi><mo>+</mo></msup></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mrow></mrow><mo>=</mo><mi>V</mi><msup><mi mathvariant="normal">Σ</mi><mrow><mo>−</mo><mn>1</mn></mrow></msup><msup><mi>U</mi><mi mathvariant="sans-serif">T</mi></msup><mo separator="true">,</mo></mrow></mstyle></mtd></mtr><mtr><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><msub><mi>κ</mi><mn>2</mn></msub><mo stretchy="false">(</mo><mi>J</mi><mo stretchy="false">)</mo></mrow></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mrow></mrow><mo>=</mo><mfrac><msub><mi>σ</mi><mi>max</mi><mo>⁡</mo></msub><msub><mi>σ</mi><mi>min</mi><mo>⁡</mo></msub></mfrac><mi mathvariant="normal">.</mi></mrow></mstyle></mtd></mtr></mtable>
+              <annotation encoding="application/x-tex">\begin{aligned}
+          J&amp;=U\Sigma V^{\mathsf T},\\
+          J^+&amp;=V\Sigma^{-1}U^{\mathsf T},\\
+          \kappa_2(J)&amp;=\frac{\sigma_{\max}}{\sigma_{\min}}.
+          \end{aligned}</annotation>
+            </semantics>
+          </math>
+        </div>
       </section>
 
       <section id="derivatives">
         <h2>Velocity and acceleration</h2>
-        <p>Define <var>B</var> as the mapping that places each drive input in its residual row, so <var>F</var> = <var>G</var>(<var>q</var>) − <var>B</var><var>u</var>(<var>t</var>). The drive profiles have analytic first and second time derivatives.</p>
-        <h3>Velocity</h3>
-        <div class="method-equation" role="math" aria-label="J times q dot equals B times u dot"><var>J</var> <var>q̇</var> = <var>B</var> <var>u̇</var></div>
-        <p>After finding the pose, the solver factors its Jacobian with singular value decomposition and solves for the coordinate velocities. The rigid link and attachment rows have zero right-hand sides because those geometry constraints are time invariant.</p>
-        <h3>Acceleration</h3>
-        <div class="method-equation" role="math" aria-label="J times q double dot equals B times u double dot minus J dot times q dot"><var>J</var> <var>q̈</var> = <var>B</var> <var>ü</var> − <var>J̇</var> <var>q̇</var></div>
-        <p>The same Jacobian factorization yields the accelerations. The last term accounts for the changing constraint geometry. For example, a rigid link’s acceleration right-hand side includes −‖<strong>v</strong><sub>B</sub> − <strong>v</strong><sub>A</sub>‖<sup>2</sup>/<var>L</var>. The attachment rows account for the changing cross product of their anchor vectors. These derivatives are evaluated at each solved pose from the constraint equations.</p>
+        <p>Because the constraints hold along the path, both time derivatives of <strong>F</strong> vanish. The first derivative gives the velocity system. The product rule then gives the acceleration system, with an extra term from the changing Jacobian.</p>
+        <div class="method-equation">
+          <math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics>
+              <mtable rowspacing="0.25em" columnalign="right left" columnspacing="0em"><mtr><mtd><mstyle scriptlevel="0" displaystyle="true"><mover accent="true"><mi mathvariant="bold-italic">F</mi><mo>˙</mo></mover></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mrow></mrow><mo>=</mo><mi>J</mi><mover accent="true"><mi mathvariant="bold-italic">q</mi><mo>˙</mo></mover><mo>−</mo><mi>B</mi><mover accent="true"><mi mathvariant="bold-italic">u</mi><mo>˙</mo></mover><mo>=</mo><mi mathvariant="bold">0</mi><mo separator="true">,</mo></mrow></mstyle></mtd></mtr><mtr><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mi>J</mi><mover accent="true"><mi mathvariant="bold-italic">q</mi><mo>˙</mo></mover></mrow></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mrow></mrow><mo>=</mo><mi>B</mi><mover accent="true"><mi mathvariant="bold-italic">u</mi><mo>˙</mo></mover><mo separator="true">,</mo></mrow></mstyle></mtd></mtr><mtr><mtd><mstyle scriptlevel="0" displaystyle="true"><mover accent="true"><mi mathvariant="bold-italic">F</mi><mo>¨</mo></mover></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mrow></mrow><mo>=</mo><mi>J</mi><mover accent="true"><mi mathvariant="bold-italic">q</mi><mo>¨</mo></mover><mo>+</mo><mover accent="true"><mi>J</mi><mo>˙</mo></mover><mover accent="true"><mi mathvariant="bold-italic">q</mi><mo>˙</mo></mover><mo>−</mo><mi>B</mi><mover accent="true"><mi mathvariant="bold-italic">u</mi><mo>¨</mo></mover><mo>=</mo><mi mathvariant="bold">0</mi><mo separator="true">,</mo></mrow></mstyle></mtd></mtr><mtr><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mi>J</mi><mover accent="true"><mi mathvariant="bold-italic">q</mi><mo>¨</mo></mover></mrow></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mrow></mrow><mo>=</mo><mi>B</mi><mover accent="true"><mi mathvariant="bold-italic">u</mi><mo>¨</mo></mover><mo>−</mo><mover accent="true"><mi>J</mi><mo>˙</mo></mover><mover accent="true"><mi mathvariant="bold-italic">q</mi><mo>˙</mo></mover><mi mathvariant="normal">.</mi></mrow></mstyle></mtd></mtr></mtable>
+              <annotation encoding="application/x-tex">\begin{aligned}
+          \dot{\boldsymbol{F}}&amp;=J\dot{\boldsymbol{q}}-B\dot{\boldsymbol{u}}
+            =\boldsymbol{0},\\
+          J\dot{\boldsymbol{q}}&amp;=B\dot{\boldsymbol{u}},\\[3pt]
+          \ddot{\boldsymbol{F}}&amp;=J\ddot{\boldsymbol{q}}+\dot{J}\dot{\boldsymbol{q}}
+            -B\ddot{\boldsymbol{u}}=\boldsymbol{0},\\
+          J\ddot{\boldsymbol{q}}&amp;=B\ddot{\boldsymbol{u}}
+            -\dot{J}\dot{\boldsymbol{q}}.
+          \end{aligned}</annotation>
+            </semantics>
+          </math>
+        </div>
+        <p>When the link endpoints have relative velocity <strong>v</strong><sub>B</sub> − <strong>v</strong><sub>A</sub>, the link row contributes a squared-speed term to the acceleration right-hand side. The attachment row follows from differentiating <strong>e</strong> × <strong>f</strong> twice. The mixed product of the two anchor velocities has a factor of two.</p>
+        <div class="method-equation">
+          <math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics>
+              <mtable rowspacing="0.25em" columnalign="right left" columnspacing="0em"><mtr><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mo stretchy="false">(</mo><mo>−</mo><mover accent="true"><mi>J</mi><mo>˙</mo></mover><mover accent="true"><mi mathvariant="bold-italic">q</mi><mo>˙</mo></mover><msub><mo stretchy="false">)</mo><mrow><mi mathvariant="normal">l</mi><mi mathvariant="normal">i</mi><mi mathvariant="normal">n</mi><mi mathvariant="normal">k</mi></mrow></msub></mrow></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mrow></mrow><mo>=</mo><mo>−</mo><mfrac><mrow><mo stretchy="false">∥</mo><msub><mi mathvariant="bold-italic">v</mi><mi>B</mi></msub><mo>−</mo><msub><mi mathvariant="bold-italic">v</mi><mi>A</mi></msub><msup><mo stretchy="false">∥</mo><mn>2</mn></msup></mrow><mi>L</mi></mfrac><mo separator="true">,</mo></mrow></mstyle></mtd></mtr><mtr><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mo stretchy="false">(</mo><mo>−</mo><mover accent="true"><mi>J</mi><mo>˙</mo></mover><mover accent="true"><mi mathvariant="bold-italic">q</mi><mo>˙</mo></mover><msub><mo stretchy="false">)</mo><mrow><mi mathvariant="normal">a</mi><mi mathvariant="normal">t</mi><mi mathvariant="normal">t</mi><mi mathvariant="normal">a</mi><mi mathvariant="normal">c</mi><mi mathvariant="normal">h</mi></mrow></msub></mrow></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mrow></mrow><mo>=</mo><mn>2</mn><mi>c</mi><mo fence="true" stretchy="true" minsize="1.2em" maxsize="1.2em">(</mo><mover accent="true"><mi mathvariant="bold-italic">e</mi><mo>˙</mo></mover><mo>×</mo><mover accent="true"><mi mathvariant="bold-italic">f</mi><mo>˙</mo></mover><mo fence="true" stretchy="true" minsize="1.2em" maxsize="1.2em">)</mo><mo separator="true">,</mo></mrow></mstyle></mtd></mtr><mtr><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mo stretchy="false">(</mo><mo>−</mo><mover accent="true"><mi>J</mi><mo>˙</mo></mover><mover accent="true"><mi mathvariant="bold-italic">q</mi><mo>˙</mo></mover><msub><mo stretchy="false">)</mo><mrow><mi mathvariant="normal">d</mi><mi mathvariant="normal">r</mi><mi mathvariant="normal">i</mi><mi mathvariant="normal">v</mi><mi mathvariant="normal">e</mi></mrow></msub></mrow></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mrow></mrow><mo>=</mo><mn>0.</mn></mrow></mstyle></mtd></mtr></mtable>
+              <annotation encoding="application/x-tex">\begin{aligned}
+          (-\dot{J}\dot{\boldsymbol{q}})_{\mathrm{link}}
+            &amp;=-\frac{\lVert\boldsymbol{v}_B-\boldsymbol{v}_A\rVert^2}{L},\\
+          (-\dot{J}\dot{\boldsymbol{q}})_{\mathrm{attach}}
+            &amp;=2c\bigl(\dot{\boldsymbol{e}}\times\dot{\boldsymbol{f}}\bigr),\\
+          (-\dot{J}\dot{\boldsymbol{q}})_{\mathrm{drive}}
+            &amp;=0.
+          \end{aligned}</annotation>
+            </semantics>
+          </math>
+        </div>
+        <p>The solver computes these terms directly from the velocities and reuses the same Jacobian factorization for the acceleration solve. It then checks that each solution satisfies the differentiated constraints, which matters when several rows constrain the same motion.</p>
+      </section>
+
+      <section id="example">
+        <h2>Worked example</h2>
+        <p>Consider one link of length <var>L</var> pinned to the origin. Its free end moves in the XZ plane and starts at (<var>L</var>, 0). The drive sets its height to <var>u</var>(<var>t</var>). With unknown absolute coordinates <var>x</var> and <var>z</var>, the position residual and its Jacobian are</p>
+        <div class="method-equation">
+          <math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics>
+              <mtable rowspacing="0.25em" columnalign="right left" columnspacing="0em"><mtr><mtd><mstyle scriptlevel="0" displaystyle="true"><mi mathvariant="bold-italic">F</mi></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mrow></mrow><mo>=</mo><mrow><mo fence="true">[</mo><mtable rowspacing="0.16em" columnalign="center" columnspacing="1em"><mtr><mtd><mstyle scriptlevel="0" displaystyle="false"><mrow><mo stretchy="false">(</mo><msup><mi>x</mi><mn>2</mn></msup><mo>+</mo><msup><mi>z</mi><mn>2</mn></msup><mo>−</mo><msup><mi>L</mi><mn>2</mn></msup><mo stretchy="false">)</mo><mi mathvariant="normal">/</mi><mo stretchy="false">(</mo><mn>2</mn><mi>L</mi><mo stretchy="false">)</mo></mrow></mstyle></mtd></mtr><mtr><mtd><mstyle scriptlevel="0" displaystyle="false"><mrow><mi>z</mi><mo>−</mo><mi>u</mi><mo stretchy="false">(</mo><mi>t</mi><mo stretchy="false">)</mo></mrow></mstyle></mtd></mtr></mtable><mo fence="true">]</mo></mrow><mo separator="true">,</mo></mrow></mstyle></mtd></mtr><mtr><mtd><mstyle scriptlevel="0" displaystyle="true"><mi>J</mi></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mrow></mrow><mo>=</mo><mrow><mo fence="true">[</mo><mtable rowspacing="0.16em" columnalign="center center" columnspacing="1em"><mtr><mtd><mstyle scriptlevel="0" displaystyle="false"><mrow><mi>x</mi><mi mathvariant="normal">/</mi><mi>L</mi></mrow></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="false"><mrow><mi>z</mi><mi mathvariant="normal">/</mi><mi>L</mi></mrow></mstyle></mtd></mtr><mtr><mtd><mstyle scriptlevel="0" displaystyle="false"><mn>0</mn></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="false"><mn>1</mn></mstyle></mtd></mtr></mtable><mo fence="true">]</mo></mrow><mi mathvariant="normal">.</mi></mrow></mstyle></mtd></mtr></mtable>
+              <annotation encoding="application/x-tex">\begin{aligned}
+              \boldsymbol{F}&amp;=\begin{bmatrix}(x^2+z^2-L^2)/(2L)\\ z-u(t)\end{bmatrix},\\
+              J&amp;=\begin{bmatrix}x/L&amp;z/L\\ 0&amp;1\end{bmatrix}.
+              \end{aligned}</annotation>
+            </semantics>
+          </math>
+        </div>
+        <p>On the branch starting at <var>x</var> = <var>L</var>, substituting <var>z</var> = <var>u</var> into the differentiated link equation gives the position, velocity, and acceleration below. The same quantities come from applying the two Jacobian systems.</p>
+        <div class="method-equation">
+          <math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics>
+              <mtable rowspacing="0.25em" columnalign="right left right left" columnspacing="0em 1em 0em"><mtr><mtd><mstyle scriptlevel="0" displaystyle="true"><mi>x</mi></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mrow></mrow><mo>=</mo><msqrt><mrow><msup><mi>L</mi><mn>2</mn></msup><mo>−</mo><msup><mi>u</mi><mn>2</mn></msup></mrow></msqrt><mo separator="true">,</mo></mrow></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="true"><mi>z</mi></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mrow></mrow><mo>=</mo><mi>u</mi><mo separator="true">,</mo></mrow></mstyle></mtd></mtr><mtr><mtd><mstyle scriptlevel="0" displaystyle="true"><mover accent="true"><mi>x</mi><mo>˙</mo></mover></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mrow></mrow><mo>=</mo><mo>−</mo><mfrac><mrow><mi>u</mi><mover accent="true"><mi>u</mi><mo>˙</mo></mover></mrow><mi>x</mi></mfrac><mo separator="true">,</mo></mrow></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="true"><mover accent="true"><mi>z</mi><mo>˙</mo></mover></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mrow></mrow><mo>=</mo><mover accent="true"><mi>u</mi><mo>˙</mo></mover><mo separator="true">,</mo></mrow></mstyle></mtd></mtr><mtr><mtd><mstyle scriptlevel="0" displaystyle="true"><mover accent="true"><mi>x</mi><mo>¨</mo></mover></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mrow></mrow><mo>=</mo><mo>−</mo><mfrac><mrow><mi>u</mi><mover accent="true"><mi>u</mi><mo>¨</mo></mover><mo>+</mo><msup><mover accent="true"><mi>u</mi><mo>˙</mo></mover><mrow><mtext> </mtext><mn>2</mn></mrow></msup><mo>+</mo><msup><mover accent="true"><mi>x</mi><mo>˙</mo></mover><mrow><mtext> </mtext><mn>2</mn></mrow></msup></mrow><mi>x</mi></mfrac><mo separator="true">,</mo></mrow></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="true"><mover accent="true"><mi>z</mi><mo>¨</mo></mover></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mrow></mrow><mo>=</mo><mover accent="true"><mi>u</mi><mo>¨</mo></mover><mi mathvariant="normal">.</mi></mrow></mstyle></mtd></mtr></mtable>
+              <annotation encoding="application/x-tex">\begin{aligned}
+          x&amp;=\sqrt{L^2-u^2},
+          &amp; z&amp;=u,\\
+          \dot{x}&amp;=-\frac{u\dot{u}}{x},
+          &amp; \dot{z}&amp;=\dot{u},\\
+          \ddot{x}&amp;=-\frac{u\ddot{u}+\dot{u}^{\,2}+\dot{x}^{\,2}}{x},
+          &amp; \ddot{z}&amp;=\ddot{u}.
+          \end{aligned}</annotation>
+            </semantics>
+          </math>
+        </div>
+        <p>A 100 mm link lifted 60 mm has <var>x</var> = 80 mm. If the height is increasing at 10 mm/s with zero vertical acceleration, the horizontal speed is −7.5 mm/s and the horizontal acceleration is about −1.95 mm/s². The horizontal acceleration comes from the link’s changing orientation. At <var>x</var> = 0, the link reaches its vertical limit and the Jacobian loses rank.</p>
       </section>
 
       <section id="results">
         <h2>Reading results</h2>
         <dl>
           <div><dt>Points</dt><dd>Position is absolute XYZ. Displacement is relative to the static hardpoint. The interface shows lengths in mm and time derivatives in mm/s and mm/s². The <code>point_kinematics.csv</code> download uses m, m/s, and m/s².</dd></div>
-          <div><dt>Rods</dt><dd>The axis points from A to B. Azimuth is measured from +X toward +Y and elevation is positive above the XY plane. The angular velocity <strong>ω</strong> = (<strong>r</strong> × <strong>ṙ</strong>) / ‖<strong>r</strong>‖<sup>2</sup> and its derivative describe the changing axis direction. Measuring spin around that axis requires another orientation reference. The <code>rod_kinematics.csv</code> download uses degrees for angles and radians for angular derivatives.</dd></div>
-          <div><dt>Damper histories</dt><dd>Compression is static length minus current length. Positive compression means the member is shorter than at the reference pose. Positive compression velocity means it is shortening at that instant. The acceleration calculation includes the transverse motion of the endpoints. Use <code>damper_kinematics.csv</code> to export these histories.</dd></div>
-          <div><dt>Motion ratio</dt><dd>Project the input and output points onto measurement directions such as <code>z</code>, <code>-y</code>, or <code>1,0,2</code>. The signed ratio is d<var>s</var><sub>out</sub>/d<var>s</var><sub>in</sub>, and ideal mechanical advantage is |d<var>s</var><sub>in</sub>/d<var>s</var><sub>out</sub>|. Choose the actual time path or one independent drive. The latter uses the corresponding column of ∂<var>q</var>/∂<var>u</var>, found by solving <var>J</var>(∂<var>q</var>/∂<var>u</var>) = <var>B</var> with other drive coordinates held fixed. A zero denominator leaves that ratio blank, and <code>motion_ratio.csv</code> records a per-sample status.</dd></div>
+          <div>
+            <dt>Rods</dt>
+            <dd>
+              The axis <strong>r</strong> points from A to B. Azimuth is measured from +X toward +Y and elevation is positive above the XY plane. The angular velocity and acceleration of that axis are
+              <div class="method-equation">
+                <math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics>
+                    <mtable rowspacing="0.25em" columnalign="right left" columnspacing="0em"><mtr><mtd><mstyle scriptlevel="0" displaystyle="true"><mi mathvariant="bold-italic">ω</mi></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mrow></mrow><mo>=</mo><mfrac><mrow><mi mathvariant="bold-italic">r</mi><mo>×</mo><mover accent="true"><mi mathvariant="bold-italic">r</mi><mo>˙</mo></mover></mrow><mrow><mo stretchy="false">∥</mo><mi mathvariant="bold-italic">r</mi><msup><mo stretchy="false">∥</mo><mn>2</mn></msup></mrow></mfrac><mo separator="true">,</mo></mrow></mstyle></mtd></mtr><mtr><mtd><mstyle scriptlevel="0" displaystyle="true"><mi mathvariant="bold-italic">α</mi></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mrow></mrow><mo>=</mo><mfrac><mrow><mi mathvariant="bold-italic">r</mi><mo>×</mo><mover accent="true"><mi mathvariant="bold-italic">r</mi><mo>¨</mo></mover></mrow><mrow><mo stretchy="false">∥</mo><mi mathvariant="bold-italic">r</mi><msup><mo stretchy="false">∥</mo><mn>2</mn></msup></mrow></mfrac><mo>−</mo><mfrac><mrow><mn>2</mn><mtext> </mtext><mi mathvariant="bold-italic">r</mi><mo>⋅</mo><mover accent="true"><mi mathvariant="bold-italic">r</mi><mo>˙</mo></mover></mrow><mrow><mo stretchy="false">∥</mo><mi mathvariant="bold-italic">r</mi><msup><mo stretchy="false">∥</mo><mn>2</mn></msup></mrow></mfrac><mi mathvariant="bold-italic">ω</mi><mi mathvariant="normal">.</mi></mrow></mstyle></mtd></mtr></mtable>
+                    <annotation encoding="application/x-tex">\begin{aligned}
+                \boldsymbol{\omega}&amp;=\frac{\boldsymbol{r}\times\dot{\boldsymbol{r}}}{\lVert\boldsymbol{r}\rVert^2},\\
+                \boldsymbol{\alpha}&amp;=\frac{\boldsymbol{r}\times\ddot{\boldsymbol{r}}}{\lVert\boldsymbol{r}\rVert^2}
+                -\frac{2\,\boldsymbol{r}\cdot\dot{\boldsymbol{r}}}{\lVert\boldsymbol{r}\rVert^2}\boldsymbol{\omega}.
+                \end{aligned}</annotation>
+                  </semantics>
+                </math>
+              </div>
+              <p>Measuring spin around the axis requires another orientation reference. The <code>rod_kinematics.csv</code> download uses degrees for angles and radians for angular derivatives.</p>
+            </dd>
+          </div>
+          <div>
+            <dt>Damper histories</dt>
+            <dd>
+              Let <var>ℓ</var> be the current length and <var>ℓ</var><sub>0</sub> the static length. Positive compression <var>c</var><sub>d</sub> means the member is shorter than at the reference pose. Positive compression velocity means it is shortening. With axis unit vector <strong>n</strong> and endpoint relative velocity <strong>v</strong> = <strong>ṙ</strong>, the solver uses
+              <div class="method-equation">
+                <math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics>
+                    <mtable rowspacing="0.25em" columnalign="right left" columnspacing="0em"><mtr><mtd><mstyle scriptlevel="0" displaystyle="true"><mi mathvariant="bold-italic">n</mi></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mrow></mrow><mo>=</mo><mi mathvariant="bold-italic">r</mi><mi mathvariant="normal">/</mi><mi mathvariant="normal">ℓ</mi><mo separator="true">,</mo></mrow></mstyle></mtd></mtr><mtr><mtd><mstyle scriptlevel="0" displaystyle="true"><msub><mi>c</mi><mi>d</mi></msub></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mrow></mrow><mo>=</mo><msub><mi mathvariant="normal">ℓ</mi><mn>0</mn></msub><mo>−</mo><mi mathvariant="normal">ℓ</mi><mo separator="true">,</mo></mrow></mstyle></mtd></mtr><mtr><mtd><mstyle scriptlevel="0" displaystyle="true"><msub><mover accent="true"><mi>c</mi><mo>˙</mo></mover><mi>d</mi></msub></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mrow></mrow><mo>=</mo><mo>−</mo><mi mathvariant="bold-italic">n</mi><mo>⋅</mo><mi mathvariant="bold-italic">v</mi><mo separator="true">,</mo></mrow></mstyle></mtd></mtr><mtr><mtd><mstyle scriptlevel="0" displaystyle="true"><msub><mi mathvariant="bold-italic">v</mi><mo>⊥</mo></msub></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mrow></mrow><mo>=</mo><mi mathvariant="bold-italic">v</mi><mo>−</mo><mo stretchy="false">(</mo><mi mathvariant="bold-italic">n</mi><mo>⋅</mo><mi mathvariant="bold-italic">v</mi><mo stretchy="false">)</mo><mi mathvariant="bold-italic">n</mi><mo separator="true">,</mo></mrow></mstyle></mtd></mtr><mtr><mtd><mstyle scriptlevel="0" displaystyle="true"><msub><mover accent="true"><mi>c</mi><mo>¨</mo></mover><mi>d</mi></msub></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mrow></mrow><mo>=</mo><mo>−</mo><mi mathvariant="bold-italic">n</mi><mo>⋅</mo><mover accent="true"><mi mathvariant="bold-italic">r</mi><mo>¨</mo></mover><mo>−</mo><mfrac><mrow><mo stretchy="false">∥</mo><msub><mi mathvariant="bold-italic">v</mi><mo>⊥</mo></msub><msup><mo stretchy="false">∥</mo><mn>2</mn></msup></mrow><mi mathvariant="normal">ℓ</mi></mfrac><mi mathvariant="normal">.</mi></mrow></mstyle></mtd></mtr></mtable>
+                    <annotation encoding="application/x-tex">\begin{aligned}
+                \boldsymbol{n}&amp;=\boldsymbol{r}/\ell,\\
+                c_d&amp;=\ell_0-\ell,\\
+                \dot{c}_d&amp;=-\boldsymbol{n}\cdot\boldsymbol{v},\\
+                \boldsymbol{v}_\perp&amp;=\boldsymbol{v}-(\boldsymbol{n}\cdot\boldsymbol{v})\boldsymbol{n},\\
+                \ddot{c}_d&amp;=-\boldsymbol{n}\cdot\ddot{\boldsymbol{r}}
+                -\frac{\lVert\boldsymbol{v}_\perp\rVert^2}{\ell}.
+                \end{aligned}</annotation>
+                  </semantics>
+                </math>
+              </div>
+              <p>The last acceleration term comes from the axis changing direction. Use <code>damper_kinematics.csv</code> to export these histories.</p>
+            </dd>
+          </div>
+          <div>
+            <dt>Motion ratio</dt>
+            <dd>
+              The tool normalizes each measurement direction and projects the corresponding point displacement onto it. Reported displacements start at the first solved sample. For the tangent, choose the time path or one independent drive with the other drives held fixed.
+              <div class="method-equation">
+                <math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics>
+                    <mtable rowspacing="0.25em" columnalign="right left" columnspacing="0em"><mtr><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><msub><mi>s</mi><mi>i</mi></msub><mo stretchy="false">(</mo><mi>t</mi><mo stretchy="false">)</mo></mrow></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mrow></mrow><mo>=</mo><msub><mi mathvariant="bold-italic">d</mi><mi>i</mi></msub><mo>⋅</mo><mo stretchy="false">(</mo><msub><mi mathvariant="bold-italic">p</mi><mi>i</mi></msub><mo stretchy="false">(</mo><mi>t</mi><mo stretchy="false">)</mo><mo>−</mo><msub><mi mathvariant="bold-italic">p</mi><mi>i</mi></msub><mo stretchy="false">(</mo><msub><mi>t</mi><mn>0</mn></msub><mo stretchy="false">)</mo><mo stretchy="false">)</mo><mo separator="true">,</mo></mrow></mstyle></mtd></mtr><mtr><mtd><mstyle scriptlevel="0" displaystyle="true"><mi mathvariant="normal">ratio</mi><mo>⁡</mo></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mrow></mrow><mo>=</mo><mfrac><mrow><mi>d</mi><msub><mi>s</mi><mrow><mi mathvariant="normal">o</mi><mi mathvariant="normal">u</mi><mi mathvariant="normal">t</mi></mrow></msub><mi mathvariant="normal">/</mi><mi>d</mi><mi>ξ</mi></mrow><mrow><mi>d</mi><msub><mi>s</mi><mrow><mi mathvariant="normal">i</mi><mi mathvariant="normal">n</mi></mrow></msub><mi mathvariant="normal">/</mi><mi>d</mi><mi>ξ</mi></mrow></mfrac><mo separator="true">,</mo></mrow></mstyle></mtd></mtr><mtr><mtd><mstyle scriptlevel="0" displaystyle="true"><msub><mrow><mi mathvariant="normal">MA</mi><mo>⁡</mo></mrow><mrow><mi mathvariant="normal">i</mi><mi mathvariant="normal">d</mi><mi mathvariant="normal">e</mi><mi mathvariant="normal">a</mi><mi mathvariant="normal">l</mi></mrow></msub></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mrow></mrow><mo>=</mo><mrow><mo fence="true">∣</mo><mfrac><mrow><mi>d</mi><msub><mi>s</mi><mrow><mi mathvariant="normal">i</mi><mi mathvariant="normal">n</mi></mrow></msub><mi mathvariant="normal">/</mi><mi>d</mi><mi>ξ</mi></mrow><mrow><mi>d</mi><msub><mi>s</mi><mrow><mi mathvariant="normal">o</mi><mi mathvariant="normal">u</mi><mi mathvariant="normal">t</mi></mrow></msub><mi mathvariant="normal">/</mi><mi>d</mi><mi>ξ</mi></mrow></mfrac><mo fence="true">∣</mo></mrow><mo separator="true">,</mo><mspace width="2em"/><mi>ξ</mi><mo>=</mo><mi>t</mi><mtext> or </mtext><msub><mi>u</mi><mi>j</mi></msub><mi mathvariant="normal">.</mi></mrow></mstyle></mtd></mtr></mtable>
+                    <annotation encoding="application/x-tex">\begin{aligned}
+                s_i(t)&amp;=\boldsymbol{d}_i\cdot(\boldsymbol{p}_i(t)-\boldsymbol{p}_i(t_0)),\\
+                \operatorname{ratio}&amp;=\frac{ds_{\mathrm{out}}/d\xi}{ds_{\mathrm{in}}/d\xi},\\
+                \operatorname{MA}_{\mathrm{ideal}}&amp;=
+                \left|\frac{ds_{\mathrm{in}}/d\xi}{ds_{\mathrm{out}}/d\xi}\right|,
+                \qquad \xi=t\ \text{or}\ u_j.
+                \end{aligned}</annotation>
+                  </semantics>
+                </math>
+              </div>
+              <p>For a selected drive <var>u</var><sub>j</sub>, the solver extracts column <var>j</var> of the sensitivity matrix. The same Jacobian used for velocity yields this matrix by solving all the unit-input columns of <var>B</var>.</p>
+              <div class="method-equation">
+                <math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics>
+                    <mrow><mi>S</mi><mo>=</mo><mfrac><mrow><mi mathvariant="normal">∂</mi><mi mathvariant="bold-italic">q</mi></mrow><mrow><mi mathvariant="normal">∂</mi><mi mathvariant="bold-italic">u</mi></mrow></mfrac><mo separator="true">,</mo><mspace width="2em"/><mi>J</mi><mi>S</mi><mo>=</mo><mi>B</mi><mo separator="true">,</mo><mspace width="2em"/><mi>S</mi><mo>=</mo><msup><mi>J</mi><mo>+</mo></msup><mi>B</mi></mrow>
+                    <annotation encoding="application/x-tex">S=\frac{\partial\boldsymbol{q}}{\partial\boldsymbol{u}},
+                \qquad JS=B,
+                \qquad S=J^+B</annotation>
+                  </semantics>
+                </math>
+              </div>
+              <p>A zero denominator leaves the corresponding ratio blank. An incompatible independent drive direction also produces a blank. The <code>motion_ratio.csv</code> export records a per-sample status.</p>
+            </dd>
+          </div>
         </dl>
       </section>
 
       <section id="sweeps">
         <h2>Suspension sweeps</h2>
         <dl>
-          <div><dt>Single-wheel travel</dt><dd>Sweep one wheel through bump and droop with other wheel drives held at zero. Steered front corners can compare up to three fixed rack positions. Toe-in and top-out camber are positive. Bump steer is toe change from zero wheel travel at the same rack position. Camber gain and bump steer rate use Jacobian sensitivities at fixed rack position, in °/mm. Track is the Y spacing across the axle, and wheelbase is the X spacing along the side.</dd></div>
-          <div><dt>Front axle steering</dt><dd>Sweep the rack while holding front wheel travels at <var>H</var> ± (<var>T</var>/2) tan(<var>R</var>), where <var>H</var> is mean front heave, <var>T</var> is static front track, and <var>R</var> is roll angle. Relative steer is measured against zero rack at the same pose, positive toward the left. Ideal Ackermann is 100% and parallel steering is 0%. The percentage uses the difference of the cotangents of the outer and inner steer magnitudes, divided by static front track over wheelbase and multiplied by 100. With front-only hardpoints, enter the wheelbase to calculate this percentage.</dd></div>
-          <div><dt>Damper ROLL / HEAVE</dt><dd>Here HEAVE is the <em>sum</em> of axle wheel travels, and ROLL is left minus right wheel travel in mm. Left and right travel are (HEAVE + ROLL)/2 and (HEAVE − ROLL)/2. A ROLL sweep compares positive and negative roll at equal magnitude. Its difference percentage divides the absolute difference between the two compression magnitudes by their mean.</dd></div>
+          <div>
+            <dt>Single-wheel travel</dt>
+            <dd>
+              Sweep one wheel through bump and droop with other wheel drives held at zero. Steered front corners can compare up to three fixed rack positions. Toe-in and top-out camber are positive. Let <var>z</var> be the wheel travel, <var>s</var> the rack position, <var>τ</var> the toe angle, and <var>γ</var> the camber angle. The rate curves use Jacobian sensitivities with rack position held fixed, reported in °/mm.
+              <div class="method-equation">
+                <math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics>
+                    <mtable rowspacing="0.25em" columnalign="right left" columnspacing="0em"><mtr><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mi mathvariant="normal">bump steer</mi><mo>⁡</mo><mo stretchy="false">(</mo><mi>z</mi><mo separator="true">,</mo><mi>s</mi><mo stretchy="false">)</mo></mrow></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mrow></mrow><mo>=</mo><mi>τ</mi><mo stretchy="false">(</mo><mi>z</mi><mo separator="true">,</mo><mi>s</mi><mo stretchy="false">)</mo><mo>−</mo><mi>τ</mi><mo stretchy="false">(</mo><mn>0</mn><mo separator="true">,</mo><mi>s</mi><mo stretchy="false">)</mo><mo separator="true">,</mo></mrow></mstyle></mtd></mtr><mtr><mtd><mstyle scriptlevel="0" displaystyle="true"><mi mathvariant="normal">camber gain</mi><mo>⁡</mo></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mrow></mrow><mo>=</mo><msub><mrow><mfrac><mrow><mi mathvariant="normal">∂</mi><mi>γ</mi></mrow><mrow><mi mathvariant="normal">∂</mi><mi>z</mi></mrow></mfrac><mo fence="true">∣</mo></mrow><mi>s</mi></msub><mo separator="true">,</mo></mrow></mstyle></mtd></mtr><mtr><mtd><mstyle scriptlevel="0" displaystyle="true"><mi mathvariant="normal">bump steer rate</mi><mo>⁡</mo></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mrow></mrow><mo>=</mo><msub><mrow><mfrac><mrow><mi mathvariant="normal">∂</mi><mi>τ</mi></mrow><mrow><mi mathvariant="normal">∂</mi><mi>z</mi></mrow></mfrac><mo fence="true">∣</mo></mrow><mi>s</mi></msub><mi mathvariant="normal">.</mi></mrow></mstyle></mtd></mtr></mtable>
+                    <annotation encoding="application/x-tex">\begin{aligned}
+                \operatorname{bump\,steer}(z,s)&amp;=\tau(z,s)-\tau(0,s),\\
+                \operatorname{camber\,gain}&amp;=\left.\frac{\partial\gamma}{\partial z}\right|_s,\\
+                \operatorname{bump\,steer\,rate}&amp;=\left.\frac{\partial\tau}{\partial z}\right|_s.
+                \end{aligned}</annotation>
+                  </semantics>
+                </math>
+              </div>
+              <p>Track is the Y spacing across the axle, and wheelbase is the X spacing along the side.</p>
+            </dd>
+          </div>
+          <div>
+            <dt>Front axle steering</dt>
+            <dd>
+              The rack sweeps at a fixed mean front heave <var>H</var> and roll angle <var>R</var>. Static track is <var>T</var>. Relative steer is measured against zero rack at the same pose, positive toward the left.
+              <div class="method-equation">
+                <math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics>
+                    <mtable rowspacing="0.25em" columnalign="right left" columnspacing="0em"><mtr><mtd><mstyle scriptlevel="0" displaystyle="true"><msub><mi>z</mi><mrow><mi mathvariant="normal">l</mi><mi mathvariant="normal">e</mi><mi mathvariant="normal">f</mi><mi mathvariant="normal">t</mi></mrow></msub></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mrow></mrow><mo>=</mo><mi>H</mi><mo>+</mo><mfrac><mi>T</mi><mn>2</mn></mfrac><mi>tan</mi><mo>⁡</mo><mi>R</mi><mo separator="true">,</mo></mrow></mstyle></mtd></mtr><mtr><mtd><mstyle scriptlevel="0" displaystyle="true"><msub><mi>z</mi><mrow><mi mathvariant="normal">r</mi><mi mathvariant="normal">i</mi><mi mathvariant="normal">g</mi><mi mathvariant="normal">h</mi><mi mathvariant="normal">t</mi></mrow></msub></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mrow></mrow><mo>=</mo><mi>H</mi><mo>−</mo><mfrac><mi>T</mi><mn>2</mn></mfrac><mi>tan</mi><mo>⁡</mo><mi>R</mi><mi mathvariant="normal">.</mi></mrow></mstyle></mtd></mtr></mtable>
+                    <annotation encoding="application/x-tex">\begin{aligned}
+                z_{\mathrm{left}}&amp;=H+\frac{T}{2}\tan R,\\
+                z_{\mathrm{right}}&amp;=H-\frac{T}{2}\tan R.
+                \end{aligned}</annotation>
+                  </semantics>
+                </math>
+              </div>
+              <p>With wheelbase <var>W</var>, the Ackermann percentage uses the magnitudes of the outer and inner steering angles. Ideal Ackermann is 100% and parallel steering is 0%. With front-only hardpoints, enter the wheelbase to calculate this percentage.</p>
+              <div class="method-equation">
+                <math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics>
+                    <mrow><mn>100</mn><mtext> </mtext><mfrac><mi>W</mi><mi>T</mi></mfrac><mrow><mo fence="true">(</mo><mi>cot</mi><mo>⁡</mo><mi mathvariant="normal">∣</mi><msub><mi>θ</mi><mrow><mi mathvariant="normal">o</mi><mi mathvariant="normal">u</mi><mi mathvariant="normal">t</mi><mi mathvariant="normal">e</mi><mi mathvariant="normal">r</mi></mrow></msub><mi mathvariant="normal">∣</mi><mo>−</mo><mi>cot</mi><mo>⁡</mo><mi mathvariant="normal">∣</mi><msub><mi>θ</mi><mrow><mi mathvariant="normal">i</mi><mi mathvariant="normal">n</mi><mi mathvariant="normal">n</mi><mi mathvariant="normal">e</mi><mi mathvariant="normal">r</mi></mrow></msub><mi mathvariant="normal">∣</mi><mo fence="true">)</mo></mrow></mrow>
+                    <annotation encoding="application/x-tex">100\,\frac{W}{T}\left(\cot|\theta_{\mathrm{outer}}|-\cot|\theta_{\mathrm{inner}}|\right)</annotation>
+                  </semantics>
+                </math>
+              </div>
+            </dd>
+          </div>
+          <div>
+            <dt>Damper ROLL / HEAVE</dt>
+            <dd>
+              The damper sweep uses a heave <var>H</var> equal to the sum of the two wheel travels. Its roll input <var>R</var> is left minus right wheel travel in mm. For a ROLL sweep the tool compares the compression of each damper at opposite, equal-magnitude roll inputs.
+              <div class="method-equation">
+                <math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics>
+                    <mtable rowspacing="0.25em" columnalign="right left" columnspacing="0em"><mtr><mtd><mstyle scriptlevel="0" displaystyle="true"><msub><mi>z</mi><mrow><mi mathvariant="normal">l</mi><mi mathvariant="normal">e</mi><mi mathvariant="normal">f</mi><mi mathvariant="normal">t</mi></mrow></msub></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mrow></mrow><mo>=</mo><mo stretchy="false">(</mo><mi>H</mi><mo>+</mo><mi>R</mi><mo stretchy="false">)</mo><mi mathvariant="normal">/</mi><mn>2</mn><mo separator="true">,</mo></mrow></mstyle></mtd></mtr><mtr><mtd><mstyle scriptlevel="0" displaystyle="true"><msub><mi>z</mi><mrow><mi mathvariant="normal">r</mi><mi mathvariant="normal">i</mi><mi mathvariant="normal">g</mi><mi mathvariant="normal">h</mi><mi mathvariant="normal">t</mi></mrow></msub></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mrow></mrow><mo>=</mo><mo stretchy="false">(</mo><mi>H</mi><mo>−</mo><mi>R</mi><mo stretchy="false">)</mo><mi mathvariant="normal">/</mi><mn>2</mn><mo separator="true">,</mo></mrow></mstyle></mtd></mtr><mtr><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mi mathvariant="normal">difference</mi><mo>⁡</mo><mtext> </mtext><mi mathvariant="normal">%</mi></mrow></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="true"><mrow><mrow></mrow><mo>=</mo><mn>100</mn><mtext> </mtext><mfrac><mrow><mo fence="true" stretchy="true" minsize="1.2em" maxsize="1.2em">∣</mo><mi mathvariant="normal">∣</mi><msub><mi>c</mi><mo>+</mo></msub><mi mathvariant="normal">∣</mi><mo>−</mo><mi mathvariant="normal">∣</mi><msub><mi>c</mi><mo>−</mo></msub><mi mathvariant="normal">∣</mi><mo fence="true" stretchy="true" minsize="1.2em" maxsize="1.2em">∣</mo></mrow><mrow><mo stretchy="false">(</mo><mi mathvariant="normal">∣</mi><msub><mi>c</mi><mo>+</mo></msub><mi mathvariant="normal">∣</mi><mo>+</mo><mi mathvariant="normal">∣</mi><msub><mi>c</mi><mo>−</mo></msub><mi mathvariant="normal">∣</mi><mo stretchy="false">)</mo><mi mathvariant="normal">/</mi><mn>2</mn></mrow></mfrac><mi mathvariant="normal">.</mi></mrow></mstyle></mtd></mtr></mtable>
+                    <annotation encoding="application/x-tex">\begin{aligned}
+                z_{\mathrm{left}}&amp;=(H+R)/2,\\
+                z_{\mathrm{right}}&amp;=(H-R)/2,\\
+                \operatorname{difference}\ \%&amp;=
+                100\,\frac{\bigl||c_+|-|c_-|\bigr|}{(|c_+|+|c_-|)/2}.
+                \end{aligned}</annotation>
+                  </semantics>
+                </math>
+              </div>
+              <p>The difference is set to zero when both compression magnitudes are effectively zero.</p>
+            </dd>
+          </div>
         </dl>
       </section>
     </article>

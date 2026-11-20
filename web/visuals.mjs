@@ -521,10 +521,10 @@ export class LineChart {
     this.draw();
   }
 
-  setData({ x, xLabel, yLabel, series, secondaryLabel }) {
+  setData({ x, xLabel, xRange, yLabel, series, secondaryLabel }) {
     const lines = series.map((line, index) => ({ color: seriesColors[index % seriesColors.length], ...line }));
     const secondary = line => line.axis === 1 || line.axis === 'right' || line.axis === 'secondary';
-    const xDomain = expandedDomain(dataDomain(x), 0);
+    const xDomain = expandedDomain(dataDomain(x.length ? x : xRange ?? []), 0);
     const leftDomain = expandedDomain(lines.filter(line => !secondary(line))
       .reduce((range, line) => dataDomain(line.values, range), [Infinity, -Infinity]));
     const hasSecondary = lines.some(secondary);
@@ -580,7 +580,7 @@ export class LineChart {
     if (!surface) return;
     const { context, width, height } = surface;
     this.plot = null;
-    if (!this.data?.x.length || !this.data.lines.length) {
+    if (!this.data) {
       message(context, width, height, 'Run an analysis to plot results.');
       return;
     }
@@ -617,7 +617,7 @@ export class LineChart {
       const y = leftScale(value);
       stroke(context, [left, y], [right, y], gridColor);
       context.fillStyle = mutedColor;
-      context.fillText(tickLabel(value), left - 8, y);
+      if (lines.length) context.fillText(tickLabel(value), left - 8, y);
     }
     context.textAlign = 'left';
     for (const value of rightTicks) {

@@ -61,10 +61,13 @@ label :is(input, select) { width: 100%; }
 .nav-link { color: #eaf1fb; text-decoration: none; padding: .46rem .75rem; border-radius: 6px; border: 1px solid #506179; font-size: .875rem; font-weight: 600; }
 .nav-link:hover, .nav-link[aria-current=page] { background: #263852; border-color: #7898a5; }
 main { max-width: 1700px; margin: auto; padding: 1rem clamp(1rem, 3vw, 3rem) 2.25rem; }
-.project-bar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .6rem 1.25rem; margin-block: 0 .9rem; }
-.project-heading { display: grid; gap: .11rem; overflow-wrap: anywhere; min-width: 0; }
+.project-heading { display: grid; gap: .11rem; margin-bottom: .85rem; overflow-wrap: anywhere; min-width: 0; }
 .project-heading strong { font-size: 1.12rem; }
-.project-bar button, .file-menu summary { font-size: .875rem; }
+.project-files { display: grid; gap: .5rem; margin-top: auto; padding-top: .75rem; border-top: 1px solid var(--line); }
+.project-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .45rem; }
+.project-actions button, .file-menu summary { font-size: .875rem; }
+#project-menu .project-actions { margin-top: .45rem; }
+#project-menu summary { white-space: normal; }
 .file-menu { position: relative; }
 .file-menu summary { white-space: nowrap; }
 .menu-body {
@@ -83,14 +86,14 @@ main { max-width: 1700px; margin: auto; padding: 1rem clamp(1rem, 3vw, 3rem) 2.2
   box-shadow: 0 5px 18px #10244129;
 }
 .menu-body button { text-align: left; font-size: .875rem; }
-.workbench { display: grid; grid-template-columns: minmax(250px, 277px) minmax(0, 1fr); align-items: start; gap: .9rem; }
+.workbench { display: grid; grid-template-columns: minmax(290px, 357px) minmax(0, 1fr); gap: .9rem; }
 .panel { min-width: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); box-shadow: 0 3px 12px #0d294409; }
 .setup, .results { padding: .95rem; }
+.setup { display: flex; flex-direction: column; }
 .panel-title h2 { font-size: 1.12rem; margin-bottom: .68rem; }
 .editor-actions { display: grid; gap: .4rem; margin-bottom: .85rem; }
 .editor-actions button { text-align: left; font-size: .9rem; }
 fieldset { margin: 0; padding: 0; display: grid; gap: .65rem; border: 0; min-width: 0; }
-legend { padding: 0; margin-bottom: .5rem; font-weight: 700; font-size: .9375rem; }
 .field-grid { display: grid; gap: .5rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .drive-row { margin-bottom: .45rem; }
 .drive-row strong { display: block; margin-bottom: .25rem; font-size: .875rem; }
@@ -98,7 +101,7 @@ legend { padding: 0; margin-bottom: .5rem; font-weight: 700; font-size: .9375rem
 .drive-row label { color: var(--muted); }
 button.primary, .tab-bar button[aria-selected=true], .sub-tabs button[aria-pressed=true] { color: #fff; background: var(--accent); border-color: var(--accent); }
 button.primary:enabled:hover, .tab-bar button[aria-selected=true]:hover, .sub-tabs button[aria-pressed=true]:enabled:hover { color: #fff; background: #085a54; }
-.status-area { display: grid; gap: .55rem; margin-bottom: .85rem; padding-bottom: .65rem; border-bottom: 1px solid var(--line); }
+.status-area { display: grid; gap: .55rem; margin-bottom: .85rem; }
 #status, .help { font-size: .875rem; color: var(--muted); line-height: 1.5; }
 #status[data-error], dialog footer p { color: #a1282d; }
 progress { width: 100%; height: .45rem; }
@@ -135,10 +138,12 @@ canvas { display: block; width: 100%; }
 .playback button, .playback select { font-size: .875rem; }
 .plot-grid { display: grid; grid-template-columns: minmax(0, 7fr) minmax(215px, 4fr); gap: .65rem; }
 .plot-canvas { height: 345px; cursor: crosshair; touch-action: pan-y; }
+.plot-canvas[tabindex="-1"] { cursor: default; }
 .plot-note { margin: .4rem 0 .55rem; }
 .table-scroll { overflow: auto; max-height: 390px; border: 1px solid var(--line); border-radius: 7px; }
 table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; font-size: .875rem; }
 td, th { border-bottom: 1px solid var(--line); padding: .42rem .55rem; white-space: nowrap; text-align: left; }
+.empty-table th { white-space: normal; }
 thead { position: sticky; top: 0; z-index: 1; background: #ecf2f7; }
 tbody tr:last-child td { border-bottom: 0; }
 tbody tr[data-sample] { cursor: pointer; }
@@ -152,6 +157,8 @@ dialog form { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; max-h
 .dialog-body { padding: .8rem 1rem; overflow-y: auto; }
 dialog footer p { font-size: .875rem; }
 dialog footer button { flex-shrink: 0; }
+#motion-dialog { width: min(680px, calc(100% - 1.5rem)); }
+#drive-settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 235px), 1fr)); gap: .5rem .85rem; }
 .settings-group { margin-bottom: .75rem; }
 .settings-group h3 { font-size: 1rem; margin-bottom: .4rem; }
 .settings-group .table-scroll { max-height: 320px; }
@@ -163,7 +170,14 @@ dialog footer button { flex-shrink: 0; }
 .member-title label { flex: 1; }
 .endpoint { display: grid; grid-template-columns: minmax(110px, 1.4fr) repeat(3, minmax(62px, 1fr)); gap: .45rem; margin-top: .55rem; }
 @media (max-width: 1070px) { .plot-grid { grid-template-columns: minmax(0, 1fr); } .table-scroll { max-height: 275px; } }
-@media (max-width: 770px) { .workbench { grid-template-columns: minmax(0, 1fr); } .setup, .results { padding: .72rem; } #drive-settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: .5rem; } }
+@media (min-width: 771px) {
+  .lab-page { height: 100dvh; display: grid; grid-template-rows: auto minmax(0, 1fr); overflow: hidden; }
+  .lab-page > main { display: grid; width: 100%; min-height: 0; margin-block: 0; padding-bottom: 1rem; }
+  .workbench { min-height: 0; }
+  .workbench > .panel { min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+  .workbench > .panel:focus-visible { outline-offset: -3px; }
+}
+@media (max-width: 770px) { .workbench { grid-template-columns: minmax(0, 1fr); } .setup, .results { padding: .72rem; } }
 @media (max-width: 500px) {
   .tire-grid, .endpoint { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .file-menu .menu-body { inset-inline-start: 0; inset-inline-end: auto; }

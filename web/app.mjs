@@ -170,7 +170,6 @@ function showModel(next, resetSelection = false) {
     wheels: next.wheels
   });
   projectTitle();
-  renderMotionForm();
   const [input, output] = ['FL_WC', 'FL_PUSH_IN'].map((name, i) => pointNames.includes(name) ? name : pointNames[i]);
   selectOptions($('ratio-in'), pointNames, resetSelection ? input : value('ratio-in') || input);
   selectOptions($('ratio-out'), pointNames, resetSelection ? output : value('ratio-out') || output);
@@ -189,7 +188,7 @@ function showModel(next, resetSelection = false) {
 function renderMotionForm() {
   $('duration').value = model.motion.duration;
   $('samples').value = model.motion.samples;
-  $('motion-fields').querySelector('legend').textContent = model.mechanism ? 'Motion inputs' : 'Wheel travel & steering';
+  $('motion-title').textContent = model.mechanism ? 'Motion inputs' : 'Wheel travel & steering';
   const drives = model.drives.filter(drive => !drive.locked);
   $('drive-settings').replaceChildren(...drives.map((drive, index) => {
     const name = drive.name;
@@ -219,18 +218,22 @@ function motionSettings() {
   };
 }
 
-async function commitMotion() {
+function editMotion() {
+  renderMotionForm();
+  $('motion-error').textContent = '';
+  $('motion-dialog').showModal();
+}
+
+function applyMotion() {
   const motion = motionSettings();
-  if (!Number.isFinite(motion.duration) || motion.duration <= 0 || !Number.isInteger(motion.samples) ||
-    motion.samples < 2 || !Object.values(motion.amplitudes_mm).every(Number.isFinite)) {
-    throw new Error('Enter a positive duration, at least two samples, and finite travel values.');
-  }
   const current = model.motion;
   if (motion.duration === current.duration && motion.samples === current.samples &&
     Object.keys(motion.amplitudes_mm).every(name => motion.amplitudes_mm[name] === current.amplitudes_mm[name] &&
-      motion.profiles[name] === current.profiles[name])) return;
-  showModel(await rpc('update', { motion }));
-  markDirty();
+      motion.profiles[name] === current.profiles[name])) {
+    $('motion-dialog').close();
+    return;
+  }
+  return applyEditor('motion', { motion }, 'Motion settings applied. Solve kinematics to update the time history.');
 }
 
 function applyPreset(sign) {
@@ -239,8 +242,6 @@ function applyPreset(sign) {
   model.drives.filter(drive => !drive.locked).forEach((drive, i) => {
     if (drive.name.endsWith('_WC_Z')) $('amplitude-' + i).value = amount;
   });
-  markDirty();
-  status('Preset loaded. Solve again to apply the new input.');
 }
 
 function mayReplaceProject() {
@@ -292,7 +293,6 @@ async function importFiles(event, mechanismOnly = false) {
 
 function saveProject(kind) {
   return run('Preparing project download…', async () => {
-    await commitMotion();
     const { name, text } = await rpc('project_' + kind);
     download(name, text, kind === 'json' ? 'application/json' : 'text/csv;charset=utf-8');
     needsSave = false;
@@ -400,7 +400,6 @@ function syncSelection() {
 function solve() {
   return run('Solving position, velocity, and acceleration…', async () => {
     pause();
-    await commitMotion();
     const next = await rpc('solve');
     result = next;
     clearSignals();
@@ -468,10 +467,11 @@ function column(name, values, color = colors[0], dashed = false, axis = undefine
 }
 
 function renderPlot(id, spec) {
-  const { x, xLabel, label, unit, series, columns = series, note, timeline = false,
+  const { x = [], xLabel, xRange, label, unit, series = [], columns = series, note, timeline = false,
     secondaryLabel, details } = spec;
   const yLabel = unit ? label + ' (' + unit + ')' : label;
-  const chartElement = el('canvas', { class: 'plot-canvas', 'aria-label': yLabel + ' versus ' + xLabel });
+  const chartElement = el('canvas', { class: 'plot-canvas', tabindex: x.length ? 0 : -1,
+    'aria-label': yLabel + ' versus ' + xLabel });
   const table = el('table', { 'aria-label': label + ' data' },
     el('thead', {}, el('tr', {}, ...[xLabel, ...columns.map(item => item.name)].map(header => el('th', { scope: 'col' }, header)))));
   const body = el('tbody');
@@ -479,7 +479,8 @@ function renderPlot(id, spec) {
     ...[item, ...columns.map(next => next.values[index])].map(cell => el('td', {}, display(cell)))));
   body.append(...rows);
   table.append(body);
-  const tableArea = el('div', { class: 'table-scroll', tabindex: '0', 'aria-label': label + ' samples' }, table);
+  const tableArea = el('div', { class: x.length ? 'table-scroll' : 'table-scroll empty-table',
+    tabindex: x.length ? 0 : null, 'aria-label': label + ' samples' }, table);
   const area = el('div', { class: 'plot-grid' },
     el('div', { class: 'visual' }, el('div', { class: 'visual-toolbar' }, el('strong', {}, yLabel)), chartElement), tableArea);
   const notes = [note, details].filter(Boolean).map(text => el('p', { class: 'help plot-note' }, text));
@@ -504,8 +505,9 @@ function renderPlot(id, spec) {
     } else seek(index, true);
   };
   const chart = new LineChart(chartElement, onSeek);
-  chart.setData({ x, xLabel, yLabel, series, secondaryLabel });
+  chart.setData({ x, xLabel, xRange, yLabel, series, secondaryLabel });
   activePlot = { chart, timeline, seek };
+  if (!x.length) return;
   seek(timeline ? sample : 0, true);
   tableArea.addEventListener('click', event => {
     const row = event.target.closest('[data-sample]');
@@ -573,8 +575,12 @@ function ratioSettings() {
 }
 
 function showRatio() {
-  if (!ratioData) return empty('ratio-output', result ? 'Choose two points and a derivative basis, then calculate the ratio.' :
-    'Solve kinematics before calculating a motion ratio.');
+  if (!ratioData) return renderPlot('ratio-output', {
+    xLabel: 'Time (s)', xRange: [0, model?.motion.duration], label: 'Motion ratio',
+    columns: [column('Signed motion ratio', []), column('Mechanical advantage', [])],
+    note: result ? 'Choose two points and a derivative basis, then calculate the ratio.' :
+      'Solve kinematics before calculating a motion ratio.'
+  });
   const data = ratioData;
   const series = [column('Signed motion ratio', data.motion_ratio), column('Mechanical advantage', data.mechanical_advantage, colors[1])];
   const rateUnit = data.drive ? ' per mm' : ' (mm/s)';
@@ -629,16 +635,22 @@ function calculateSweep() {
 }
 
 function showSweep() {
+  const axle = sweepType === 'front_axle';
+  const metrics = axle ? axleMetrics : wheelMetrics;
+  const metric = value('sweep-metric');
+  const [label, unit] = metrics[metric] ?? Object.values(metrics)[0];
+  const xLabel = axle ? 'Rack displacement (mm)' : 'Wheel travel (mm)';
   if (!sweepData) {
-    const supported = sweepType === 'suspension' ? model?.sweep_corners.length : model?.has_front_axle;
-    return empty('sweep-output', supported ? 'Set the range and calculate the sweep.' :
-      (sweepType === 'suspension' ? 'This sweep requires a standard suspension with a wheel center.' :
-        'This sweep requires both front wheel centers, rack points, and tie rods.'));
+    const supported = axle ? model?.has_front_axle : model?.sweep_corners.length;
+    return renderPlot('sweep-output', {
+      xLabel, xRange: axle ? [number('rack-min'), number('rack-max')] : [number('travel-min'), number('travel-max')],
+      label, unit, columns: [column(label + ' (' + unit + ')', [])],
+      note: supported ? 'Set the range and calculate the sweep.' :
+        (axle ? 'This sweep requires both front wheel centers, rack points, and tie rods.' :
+          'This sweep requires a standard suspension with a wheel center.')
+    });
   }
   const data = sweepData;
-  const metric = value('sweep-metric');
-  const axle = sweepType === 'front_axle';
-  const [label, unit] = (axle ? axleMetrics : wheelMetrics)[metric];
   const series = axle ? (['steer_deg', 'yaw_deg'].includes(metric) ?
     data[metric].map((values, i) => column(i ? 'Right wheel' : 'Left wheel', values, colors[i], Boolean(i))) :
     [column(label, data[metric])]) :
@@ -650,7 +662,7 @@ function showSweep() {
   ] : Object.entries(wheelMetrics).flatMap(([key, [title, units]]) =>
     data.rack_mm.map((rack, i) => column(title + ' (' + units + ') · ' + display(rack) + ' mm rack', data[key][i])));
   renderPlot('sweep-output', {
-    x: axle ? data.rack_mm : data.travel_mm, xLabel: axle ? 'Rack displacement (mm)' : 'Wheel travel (mm)',
+    x: axle ? data.rack_mm : data.travel_mm, xLabel,
     label, unit, series, columns,
     note: axle ? 'Fixed wheel travel · Left ' + display(data.travel_mm[0]) + ' mm · Right ' + display(data.travel_mm[1]) + ' mm' :
       'Positive travel is bump. Each curve holds the rack at a fixed position.'
@@ -686,25 +698,33 @@ function calculateDamper() {
 
 async function showDamper(token) {
   const names = [...new Set([value('damper-a'), value('damper-b')].filter(Boolean))];
-  if (!names.length) return empty('damper-output', 'Add deformable members to analyze damper travel. The damper example includes two members.');
-  const metric = value('damper-metric');
-  if (damperType === 'history') {
-    if (!result) return empty('damper-output', 'Solve kinematics to view damper travel, speed, and acceleration.');
+  const metric = value('damper-metric') || 'compression';
+  const history = damperType === 'history';
+  const difference = metric === 'difference';
+  const [label, unit] = difference ? ['Left/right difference', '%'] : damperMetrics[metric];
+  const xLabel = history ? 'Time (s)' : value('damper-mode') === 'ROLL' ? 'Roll magnitude (mm)' : 'Heave sum (mm)';
+  if (!names.length || !(history ? result : damperSweep)) {
+    const note = !names.length ? 'Add deformable members or load the damper example to analyze damper travel.' :
+      history ? 'Solve kinematics to view damper travel, speed, and acceleration.' :
+        'Choose an axle, damper, and range, then calculate the sweep.';
+    return renderPlot('damper-output', {
+      xLabel, xRange: history ? [0, model?.motion.duration] : [number('damper-min'), number('damper-max')],
+      label, unit, columns: [column(label + ' (' + unit + ')', [])], note
+    });
+  }
+  if (history) {
     const data = await getSignals('damper', names);
     if (token !== renderId) return;
-    const [label, unit] = damperMetrics[metric];
     const toSeries = (key, item, i, name) => column(name, item[key].map(next => scaled(next, 1000)), colors[i], Boolean(i));
     const series = data.map((item, i) => toSeries(metric, item, i, names[i]));
     const columns = data.flatMap((item, i) => Object.entries(damperMetrics).map(([key, [label, unit]]) =>
       toSeries(key, item, i, names[i] + ' · ' + label + ' (' + unit + ')')));
-    renderPlot('damper-output', { x: result.time, xLabel: 'Time (s)', label, unit, series, columns, timeline: true,
+    renderPlot('damper-output', { x: result.time, xLabel, label, unit, series, columns, timeline: true,
       note: 'Positive compression means the member is shorter than in the static pose.' });
     return;
   }
-  if (!damperSweep) return empty('damper-output', 'Choose an axle, damper, and range, then calculate the sweep.');
   const data = damperSweep;
   const roll = Boolean(data.roll_difference_pct);
-  const difference = metric === 'difference';
   const abs = $('damper-abs').checked;
   const compress = names.flatMap((name, i) => data.compression_mm[data.member_names.indexOf(name)].map((values, j) =>
     column(name + (roll ? (j ? ' · Right roll' : ' · Left roll') : ''),
@@ -713,8 +733,7 @@ async function showDamper(token) {
     data.roll_difference_pct[data.member_names.indexOf(name)], colors[i], Boolean(i))) : [];
   const wheelColumns = data.wheel_travel_mm.flatMap((caseValues, j) => caseValues.map((values, i) =>
     column((roll ? (j ? 'Right roll · ' : 'Left roll · ') : '') + (i ? 'Right wheel (mm)' : 'Left wheel (mm)'), values)));
-  renderPlot('damper-output', { x: data.input_mm, xLabel: roll ? 'Roll magnitude (mm)' : 'Heave sum (mm)',
-    label: difference ? 'Left/right difference' : 'Compression', unit: difference ? '%' : 'mm',
+  renderPlot('damper-output', { x: data.input_mm, xLabel, label, unit,
     series: difference ? differences : compress, columns: [...compress, ...differences, ...wheelColumns],
     note: roll ? 'Opposite roll cases share the same wheel-travel difference magnitude.' :
       'Heave is the sum of left and right wheel travel.' });
@@ -842,20 +861,11 @@ function applyMembers() {
 function applyEditor(kind, changes, message) {
   const form = $(kind + '-form');
   const submit = form.querySelector('button.primary');
-  const inputs = motionSettings();
   $(kind + '-error').textContent = '';
   submit.disabled = true;
   return run('Validating the model…', async () => {
     try {
       showModel(await rpc('update', changes));
-      // Keep unsaved motion edits intact when changing geometry.
-      if (Number.isFinite(inputs.duration)) $('duration').value = inputs.duration;
-      if (Number.isFinite(inputs.samples)) $('samples').value = inputs.samples;
-      model.drives.filter(drive => !drive.locked).forEach((drive, i) => {
-        const amplitude = inputs.amplitudes_mm[drive.name];
-        if (Number.isFinite(amplitude)) $('amplitude-' + i).value = amplitude;
-        if (inputs.profiles[drive.name]) $('profile-' + i).value = inputs.profiles[drive.name];
-      });
       markDirty();
       $(kind + '-dialog').close();
       status(message);
@@ -886,8 +896,9 @@ function submit(id, action) {
   });
 }
 
-submit('motion-form', solve);
-on('motion-form', 'input', markDirty);
+on('solve', 'click', solve);
+on('edit-motion', 'click', editMotion);
+submit('motion-form', applyMotion);
 on('bump-preset', 'click', () => applyPreset(1));
 on('droop-preset', 'click', () => applyPreset(-1));
 on('import-project', 'click', () => $('project-file').click());
@@ -899,7 +910,7 @@ on('download-project-csv', 'click', () => { void saveProject('csv'); });
 on('load-example', 'click', () => { if (mayReplaceProject()) void loadProject({}); });
 on('load-damper-example', 'click', () => { if (mayReplaceProject()) void loadProject({ example: 'damper' }); });
 on('retry', 'click', () => window.location.reload());
-all('.menu-body button').forEach(button => button.addEventListener('click', () => { button.closest('details').open = false; }));
+all('.file-menu button').forEach(button => button.addEventListener('click', () => { button.closest('details').open = false; }));
 all('[data-export]').forEach(button => button.addEventListener('click', () => { void exportResults(button.dataset.export); }));
 document.addEventListener('click', event => {
   all('.file-menu[open]').forEach(menu => { if (!menu.contains(event.target)) menu.open = false; });
