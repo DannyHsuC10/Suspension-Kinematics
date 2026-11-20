@@ -148,7 +148,6 @@ thead { position: sticky; top: 0; z-index: 1; background: #ecf2f7; }
 tbody tr:last-child td { border-bottom: 0; }
 tbody tr[data-sample] { cursor: pointer; }
 tbody tr[data-sample]:hover, tr[data-current] { background: #dff0ed; }
-.empty { border: 1px dashed #b8cbd9; background: #f6f9fc; color: var(--muted); border-radius: 8px; padding: 1.05rem; font-size: .9375rem; line-height: 1.5; }
 dialog { color: var(--ink); border: 1px solid var(--line); border-radius: 10px; padding: 0; width: min(830px, calc(100% - 1.5rem)); max-height: 91dvh; }
 dialog::backdrop { background: #111d31a0; }
 dialog form { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; max-height: 89dvh; }

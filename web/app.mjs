@@ -458,10 +458,6 @@ function clearPlot() {
   activePlot = undefined;
 }
 
-function empty(id, text) {
-  $(id).replaceChildren(el('p', { class: 'empty' }, text));
-}
-
 function column(name, values, color = colors[0], dashed = false, axis = undefined) {
   return { name, values, color, dashed, axis };
 }
@@ -529,7 +525,7 @@ async function getSignals(kind, names) {
 }
 
 function chooseSignalOptions(kind) {
-  const names = kind === 'point' ? visiblePoints() : model.links.map(link => link.name);
+  const names = model ? (kind === 'point' ? visiblePoints() : model.links.map(link => link.name)) : [];
   const picks = selected[kind];
   const noun = kind === 'point' ? 'Point' : 'Rod';
   $('signal-name-a').textContent = noun + ' A';
@@ -544,12 +540,17 @@ function chooseSignalOptions(kind) {
 
 async function showSignals(token) {
   const kind = tab === 'points' ? 'point' : 'rod';
-  if (!model) return empty('signals-output', 'Load a project to inspect its geometry.');
   const names = chooseSignalOptions(kind);
-  if (!result) return empty('signals-output', 'Solve kinematics to view the time history.');
-  if (!names.length) return empty('signals-output', 'This mechanism has no ' + kind + ' signals.');
   const metric = value('signal-type');
   const [label, unit, scale, components] = (kind === 'point' ? pointMetrics : rodMetrics)[metric];
+  if (!result || !names.length) {
+    const note = !model ? 'Load a project to inspect its geometry.' :
+      !names.length ? 'This mechanism has no ' + kind + ' signals.' : 'Solve kinematics to view the time history.';
+    return renderPlot('signals-output', {
+      xLabel: 'Time (s)', xRange: [0, model?.motion.duration], label, unit,
+      columns: (components ?? [label]).map(name => column(name, [])), note
+    });
+  }
   const data = await getSignals(kind, names);
   if (token !== renderId) return;
   const plotted = data.flatMap((record, i) => {
