@@ -7,7 +7,7 @@ from shutil import copyfile
 ROOT = Path(__file__).resolve().parent.parent
 SITE = ROOT / "dist"
 WEB_FILES = (
-    "index.html", "method.html", "method.css", "styles.css", "app.mjs",
+    "index.html", "method.html", "method.css", "styles.css", "suspension-icon.svg", "app.mjs",
     "visuals.mjs", "downloads.mjs", "worker.js", "lab_backend.py",
 )
 PACKAGE_FILES = (
