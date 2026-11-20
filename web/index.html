@@ -123,11 +123,12 @@
         </section>
 
         <section id="view-sweeps" role="tabpanel" aria-labelledby="tab-sweeps" hidden>
-          <div class="sub-tabs" id="sweep-nav" aria-label="Suspension sweep type">
-            <button type="button" data-sweep="suspension" aria-pressed="true">Single-wheel travel</button>
-            <button type="button" data-sweep="front_axle" aria-pressed="false">Front-axle steering</button>
-          </div>
-          <form id="sweep-form" class="scan-form">
+          <form id="sweep-form">
+            <div class="sub-tabs" id="sweep-nav" role="group" aria-label="Suspension sweep controls">
+              <button type="button" data-sweep="suspension" aria-pressed="true">Single-wheel travel</button>
+              <button type="button" data-sweep="front_axle" aria-pressed="false">Front-axle steering</button>
+              <button type="submit" id="calculate-sweep" class="primary" disabled>Calculate sweep</button>
+            </div>
             <div id="wheel-sweep-fields" class="control-strip">
               <label>Corner<select id="sweep-corner"></select></label>
               <label>Travel min (mm)<input id="travel-min" type="number" value="-30" step="any" required></label>
@@ -142,7 +143,6 @@
               <label>Rack min (mm)<input id="rack-min" type="number" value="0" step="any" required></label>
               <label>Rack max (mm)<input id="rack-max" type="number" value="0" step="any" required></label>
             </div>
-            <button id="calculate-sweep" class="primary" disabled>Calculate sweep</button>
           </form>
           <div class="control-strip metric-strip"><label>Plot metric<select id="sweep-metric"></select></label></div>
           <div id="sweep-output"></div>

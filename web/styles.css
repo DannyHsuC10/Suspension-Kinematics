@@ -109,11 +109,12 @@ progress { width: 100%; height: .45rem; }
 .tab-bar, .sub-tabs { display: flex; flex-wrap: wrap; gap: .35rem; }
 .tab-bar button, .sub-tabs button { font-size: .875rem; }
 .sub-tabs { margin-bottom: .75rem; }
+#sweep-nav { flex-wrap: nowrap; }
+#sweep-nav button { overflow-wrap: anywhere; }
 .control-strip { display: flex; flex-wrap: wrap; align-items: end; gap: .55rem; margin-bottom: .65rem; }
 .control-strip label:not(.check) { flex: 1 1 125px; max-width: 260px; }
 .control-strip .check { min-height: 2.25rem; }
 .control-help { margin-bottom: .65rem; }
-.scan-form > button { margin-bottom: .65rem; }
 .metric-strip { padding-top: .65rem; border-top: 1px solid var(--line); }
 .visual { min-width: 0; border-radius: 8px; overflow: hidden; background: var(--night); color: #eaf1fb; }
 .visual-toolbar { display: flex; flex-wrap: wrap; gap: .65rem; align-items: center; padding: .55rem .72rem; background: #1c2b43; }
