@@ -3,7 +3,8 @@
 import argparse
 from pathlib import Path
 
-from .model import EXAMPLES, load_model, make_motion
+from .model import EXAMPLES, make_motion
+from .project import load_project
 from .results import export_results, motion_ratio
 from .solver import solve
 
@@ -37,9 +38,14 @@ def main():
         return
 
     try:
-        model = load_model(args.hardpoints or EXAMPLES / "hardpoints.csv", args.mechanism)
-        motion = make_motion(model, duration=args.duration, samples=args.samples,
-                             amplitudes_mm=dict(args.amplitude), profiles=dict(args.profile))
+        _, model, _, options = load_project(args.hardpoints or EXAMPLES / "hardpoints.csv", args.mechanism)
+        if args.duration is not None:
+            options["duration"] = args.duration
+        if args.samples is not None:
+            options["samples"] = args.samples
+        options["amplitudes_mm"].update(args.amplitude)
+        options["profiles"].update(args.profile)
+        motion = make_motion(model, **options)
         result = solve(model, motion)
         ratio = None
         if args.pair:

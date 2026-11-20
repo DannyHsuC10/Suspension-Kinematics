@@ -20,7 +20,7 @@ BACKGROUND = "#102534"
 MOVING = "#49d9c0"
 FIXED = "#b1c6d7"
 ROD = "#85b8d5"
-SELECTED = "#ffbc70"
+SELECTION_COLORS = ("#ffbc70", "#d2a2ff")
 REFERENCE = "#57768c"
 FONT = "Microsoft JhengHei UI"
 TIRE_ANGLES = np.linspace(0., 2. * pi, 32, endpoint=False)
@@ -30,6 +30,7 @@ SUSPENSION_RODS = (
     ("_PUSH_ROD", "推桿", "#e5a9f5"),
     ("FRONT_RACK_BAR", "齒條", "#bada82"),
 )
+DEFORMABLE_ROD = ("", "變形元件", "#ff9d99")
 
 
 class MechanismViewport(tk.Canvas):
@@ -44,7 +45,7 @@ class MechanismViewport(tk.Canvas):
         self.pan = np.zeros(2)
         self.reference_visible = False
         self.labels_visible = False
-        self.selected_point = self.selected_rod = None
+        self.selected_points = self.selected_rods = ()
         self._orbit_origin = self._drag_at = self._pan_at = None
         self._orbit_moved = False
         self.bind("<Configure>", self.draw)
@@ -64,7 +65,7 @@ class MechanismViewport(tk.Canvas):
         self.model = model
         if model is None:
             self.position = None
-            self.selected_point = self.selected_rod = None
+            self.selected_points = self.selected_rods = ()
             self.draw()
             return
 
@@ -83,9 +84,13 @@ class MechanismViewport(tk.Canvas):
             if frame is None:
                 continue
             self.tires[corner] = (frame, setup.width_mm / 1000., setup.radius_mm / 1000.)
-        self.rod_styles = [next((style for style in SUSPENSION_RODS if link.name.endswith(style[0])), None)
-                           for link in model.links]
-        self.rod_legend = tuple(style for style in SUSPENSION_RODS if style in self.rod_styles)
+        deformable_names = {member.name for member in model.deformable_members}
+        self.rod_styles = [
+            DEFORMABLE_ROD if link.name in deformable_names else
+            next((style for style in SUSPENSION_RODS if link.name.endswith(style[0])), None)
+            for link in model.links
+        ]
+        self.rod_legend = tuple(style for style in (*SUSPENSION_RODS, DEFORMABLE_ROD) if style in self.rod_styles)
 
         low, high = model.reference.min(axis=0), model.reference.max(axis=0)
         if positions is not None and len(positions):
@@ -102,7 +107,7 @@ class MechanismViewport(tk.Canvas):
         self.span = max((high - low).max(), .001)
         self.grid = self._make_grid(low, high)
         if new_model:
-            self.selected_point = self.selected_rod = None
+            self.selected_points = self.selected_rods = ()
             self.reset_camera()
         else:
             self.draw()
@@ -131,9 +136,9 @@ class MechanismViewport(tk.Canvas):
         self.labels_visible = bool(visible)
         self.draw()
 
-    def set_selection(self, point, rod):
-        if (point, rod) != (self.selected_point, self.selected_rod):
-            self.selected_point, self.selected_rod = point, rod
+    def set_selection(self, points, rods):
+        if (points, rods) != (self.selected_points, self.selected_rods):
+            self.selected_points, self.selected_rods = points, rods
             self.draw()
 
     def _make_grid(self, low, high):
@@ -230,9 +235,9 @@ class MechanismViewport(tk.Canvas):
         if self.on_pick is not None:
             self.on_pick(kind, name)
         elif kind == "point":
-            self.set_selection(name, self.selected_rod)
+            self.set_selection((name,), self.selected_rods)
         else:
-            self.set_selection(self.selected_point, name)
+            self.set_selection(self.selected_points, (name,))
 
     def _draw_axes(self, camera, width, height):
         x, y = width - 53, height - 53
@@ -257,32 +262,34 @@ class MechanismViewport(tk.Canvas):
         depths = depth[self.members].mean(axis=1)
         order = np.argsort(depths, kind="stable")
         order = order[self.visible_rods[order]]
-        selected_item = None
+        selected = dict(zip(self.selected_rods, SELECTION_COLORS))
+        selected_items = []
         for i in order:
             a, b = self.members[i]
-            highlight = self.selected_rod == self.model.links[i].name
+            highlight = selected.get(self.model.links[i].name)
             style = self.rod_styles[i]
             color = style[2] if style else FIXED if self.fixed_members[i] else ROD
             width = 3 if style else 2
             if highlight:
-                color, width = SELECTED, 4
+                color, width = highlight, 4
             self.create_line(*screen[[a, b]].ravel(), fill=BACKGROUND, width=width + 3)
             item = self.create_line(*screen[[a, b]].ravel(), fill=color, width=width, tags=(f"rod:{i}",))
             if highlight:
-                selected_item = item
-        if selected_item is not None:
-            self.tag_raise(selected_item)
+                selected_items.append(item)
+        for item in selected_items:
+            self.tag_raise(item)
 
     def _draw_points(self, screen, depth):
         order = np.argsort(depth, kind="stable")
         order = order[self.visible_points[order]]
+        selected = dict(zip(self.selected_points, SELECTION_COLORS))
         for i in order:
             x, y = screen[i]
             name = self.model.point_names[i]
             fixed = self.fixed[i]
-            highlight = self.selected_point == name
+            highlight = selected.get(name)
             radius = 6 if highlight else 4
-            color = SELECTED if highlight else FIXED if fixed else MOVING
+            color = highlight or (FIXED if fixed else MOVING)
             tags = (f"point:{i}",)
             bounds = (x - radius, y - radius, x + radius, y + radius)
             if fixed:
@@ -292,10 +299,10 @@ class MechanismViewport(tk.Canvas):
         for i in order:
             x, y = screen[i]
             name = self.model.point_names[i]
-            highlight = self.selected_point == name
+            highlight = selected.get(name)
             if not (highlight or self.labels_visible):
                 continue
-            color = SELECTED if highlight else "#e2edf5"
+            color = highlight or "#e2edf5"
             self.create_text(x + 8, y - 7, text=name, anchor="sw", fill=color,
                              font=(FONT, 9), tags=(f"point:{i}",))
 

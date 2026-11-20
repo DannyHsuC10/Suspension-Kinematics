@@ -1,6 +1,5 @@
 """Desktop workbench for importing, solving and inspecting kinematics."""
 
-import csv
 from pathlib import Path
 from queue import Empty, SimpleQueue
 from threading import Thread
@@ -10,16 +9,20 @@ from tkinter import filedialog, font, messagebox, ttk
 
 import numpy as np
 
-from .geometry_editor import GeometrySettings
-from .model import EXAMPLES, load_model, make_motion, read_hardpoints
-from .results import export_results, motion_ratio
+from .geometry_editor import DeformableSettings, GeometrySettings
+from .model import EXAMPLES, load_model, make_motion
+from .project import load_project, save_project
+from .results import damper_histories, export_results, motion_ratio
 from .solver import solve
-from .suspension import has_front_axle, has_steering, sweep_corners, sweep_front_axle, sweep_suspension
+from .suspension import (
+    damper_axles, has_front_axle, has_steering, sweep_corners, sweep_dampers, sweep_front_axle, sweep_suspension,
+)
 from .viewport import MechanismViewport
 from .wheel_frame import TireSetup
 
 
-COLORS = ("#49d9c0", "#ffbc70", "#89aaff")
+COLORS = ("#49d9c0", "#ffbc70", "#89aaff", "#ef9bd7")
+COMPARISON_DASH = (6, 4)
 BACKGROUND = "#edf2f6"
 INK = "#132c40"
 MUTED = "#496376"
@@ -30,13 +33,21 @@ TIME_LABEL = "時間 (s)"
 PATH_RATE = "沿時間歷程"
 PROFILE_LABELS = {"pulse": "往返", "sine": "正弦", "ramp": "線性"}
 CORNER_LABELS = {"FL": "左前", "FR": "右前", "RL": "左後", "RR": "右後"}
+DEFAULT_HARDPOINTS = EXAMPLES / "hardpoints.csv"
+CSV_FILE_TYPES = (("硬點表 CSV", "*.csv"), ("所有檔案", "*.*"))
 POINT_FIELDS = {
-    "位置": ("position", "mm"),
-    "相對位移": ("displacement", "mm"),
-    "速度": ("velocity", "mm/s"),
-    "加速度": ("acceleration", "mm/s²"),
+    "位置": ("position", "mm", None),
+    "相對位移": ("displacement", "mm", "總位移"),
+    "速度": ("velocity", "mm/s", "合速度"),
+    "加速度": ("acceleration", "mm/s²", "合加速度"),
 }
-ROD_FIELDS = ("桿軸角度", "角速度", "角加速度")
+ROD_FIELDS = ("桿軸角度", "角速度", "角加速度", "長度", "軸向壓縮量")
+DAMPER_HISTORY_FIELDS = {
+    "壓縮量": ("compression", "mm", "靜態長度減去當前長度。正值為壓縮，負值為伸長。"),
+    "壓縮速度": ("velocity", "mm/s", "正值表示正在縮短，負值表示正在伸長。"),
+    "壓縮加速度": ("acceleration", "mm/s²", "正值表示壓縮速度增加，負值表示壓縮速度減少。"),
+}
+DAMPER_SWEEP_FIELDS = ("伸縮量 (mm)", "左右差距 (%)")
 RATIO_FIELDS = ("有號運動比", "理想機械利益")
 SWEEP_FIELDS = {
     "外傾角 Camber": ("camber_deg", "deg", "正值表示輪胎頂端朝外。靜態外傾可在硬點與輪胎設定調整。"),
@@ -90,6 +101,7 @@ class SignalPlot(tk.Canvas):
         self.x_label = x_label
         self.x_values = np.empty(0)
         self.series = ()
+        self.comparison = ()
         self.unit = ""
         self.index = None
         self.bounds = None
@@ -97,9 +109,10 @@ class SignalPlot(tk.Canvas):
         self.bind("<Button-1>", self.seek)
         self.bind("<B1-Motion>", self.seek)
 
-    def set_data(self, x_values, series, unit):
+    def set_data(self, x_values, series, unit, *, comparison=()):
         self.x_values = x_values
         self.series = series
+        self.comparison = comparison
         self.unit = unit
         self.index = None
         self.draw()
@@ -114,13 +127,13 @@ class SignalPlot(tk.Canvas):
         if width < 240 or height < 130:
             return
         if not len(self.x_values):
-            self.label(width / 2, height / 2, "完成求解後可檢視曲線與樣本。", size=11)
+            self.label(width / 2, height / 2, "目前沒有可顯示的曲線。", size=11)
             return
         left, right, top, bottom = 91, width - 28, 58, height - 55
         first, last = self.x_values[[0, -1]]
         if first == last:
             first, last = first - 0.5, last + 0.5
-        ranges = [values[np.isfinite(values)] for _, values in self.series]
+        ranges = [values[np.isfinite(values)] for _, values in (*self.series, *self.comparison)]
         ranges = [values for values in ranges if len(values)]
         if not ranges:
             self.label(width / 2, height / 2, "目前工況下沒有可用數值。", size=11)
@@ -151,22 +164,23 @@ class SignalPlot(tk.Canvas):
             self.create_line(left, zero, right, zero, fill="#668092")
 
         legend_x = right
-        for (label, values), color in reversed(tuple(zip(self.series, COLORS))):
+        for (label, _), color in reversed(tuple(zip(self.series, COLORS))):
             legend = self.label(legend_x, 22, label, anchor="e", fill=color, size=10)
-            legend_box = self.bbox(legend)
-            legend_x = legend_box[0] - 30
-            self.create_line(legend_x + 6, 22, legend_x + 22, 22, fill=color, width=2)
-            legend_x -= 12
-            edges = np.flatnonzero(np.diff(np.r_[False, np.isfinite(values), False]))
-            for start, stop in zip(edges[::2], edges[1::2]):
-                xs = pixel_x(self.x_values[start:stop])
-                ys = pixel_y(values[start:stop])
-                if stop - start == 1:
-                    x, y = xs[0], ys[0]
-                    self.create_oval(x - 2, y - 2, x + 2, y + 2, fill=color, outline=color)
-                else:
-                    coords = np.column_stack((xs, ys)).ravel().tolist()
-                    self.create_line(*coords, width=2, fill=color)
+            label_left = self.bbox(legend)[0]
+            self.create_line(label_left - 20, 22, label_left - 6, 22, fill=color, width=2)
+            legend_x = label_left - 26
+        for series, dash in ((self.series, ()), (self.comparison, COMPARISON_DASH)):
+            for (_, values), color in zip(series, COLORS):
+                edges = np.flatnonzero(np.diff(np.r_[False, np.isfinite(values), False]))
+                for start, stop in zip(edges[::2], edges[1::2]):
+                    xs = pixel_x(self.x_values[start:stop])
+                    ys = pixel_y(values[start:stop])
+                    if stop - start == 1:
+                        x, y = xs[0], ys[0]
+                        self.create_oval(x - 2, y - 2, x + 2, y + 2, fill=color, outline=color)
+                    else:
+                        coords = np.column_stack((xs, ys)).ravel().tolist()
+                        self.create_line(*coords, width=4 if dash else 2, fill=color, dash=dash)
 
         self.draw_cursor()
 
@@ -182,11 +196,14 @@ class SignalPlot(tk.Canvas):
         left, right, first, last, top, bottom, low, high = self.bounds
         x = left + (right - left) * (self.x_values[self.index] - first) / (last - first)
         self.create_line(x, top, x, bottom, fill="#e4eef3", dash=(3, 3), tags="playhead")
-        for (_, values), color in zip(self.series, COLORS):
-            value = values[self.index]
-            if np.isfinite(value):
-                y = bottom - (bottom - top) * (value - low) / (high - low)
-                self.create_oval(x - 4, y - 4, x + 4, y + 4, fill=color, outline="#102534", tags="playhead")
+        for series, radius in ((self.series, 4), (self.comparison, 6)):
+            for (_, values), color in zip(series, COLORS):
+                value = values[self.index]
+                if np.isfinite(value):
+                    y = bottom - (bottom - top) * (value - low) / (high - low)
+                    fill, outline = (color, "#102534") if radius == 4 else ("", color)
+                    self.create_oval(x - radius, y - radius, x + radius, y + radius,
+                                     fill=fill, outline=outline, tags="playhead")
 
     def seek(self, event):
         if self.bounds is None:
@@ -232,8 +249,8 @@ class SignalView(ttk.Frame):
         self.plot.set_data(np.empty(0), (), "")
         self.fill_table(np.empty(0), ())
 
-    def show(self, x_values, series, unit, index, *, columns=None):
-        self.plot.set_data(x_values, series, unit)
+    def show(self, x_values, series, unit, index, *, columns=None, comparison=()):
+        self.plot.set_data(x_values, series, unit, comparison=comparison)
         if columns is None:
             columns = tuple((f"{name} ({unit})", values) for name, values in series)
         self.fill_table(x_values, columns)
@@ -278,6 +295,232 @@ def picker(parent, column, label, variable, values=(), *, width=16, editable=Fal
     if command is not None:
         combo.bind("<<ComboboxSelected>>", command)
     return combo
+
+
+class DamperResultView(SignalView):
+    def __init__(self, parent, on_seek):
+        super().__init__(parent, on_seek)
+        self.primary = tk.StringVar(self)
+        self.secondary = tk.StringVar(self)
+        self.field = tk.StringVar(self, value=next(iter(DAMPER_HISTORY_FIELDS)))
+        self.member_names = ()
+        self.histories = {}
+        self.time = None
+        self.primary_picker = picker(self.controls, 0, "避震器 A", self.primary, width=23, command=self.select_members)
+        self.secondary_picker = picker(self.controls, 1, "避震器 B（選填）", self.secondary, width=23,
+                                       command=self.select_members)
+        picker(self.controls, 2, "曲線", self.field, tuple(DAMPER_HISTORY_FIELDS), command=self.display_result)
+
+    def set_solution(self, model, result):
+        self.member_names = tuple(member.name for member in model.deformable_members) if model else ()
+        self.histories = damper_histories(model, result) if result is not None else {}
+        self.time = result.time if result is not None else None
+        if self.primary.get() not in self.member_names:
+            self.primary.set(next(iter(self.member_names), ""))
+        if self.secondary.get() not in self.member_names or self.secondary.get() == self.primary.get():
+            self.secondary.set("")
+        self.primary_picker.configure(state="readonly" if self.member_names else "disabled")
+        self.secondary_picker.configure(state="readonly" if len(self.member_names) > 1 else "disabled")
+        self.select_members()
+
+    def select_members(self, _event=None):
+        self.primary_picker.configure(values=tuple(name for name in self.member_names if name != self.secondary.get()))
+        self.secondary_picker.configure(values=("", *(name for name in self.member_names if name != self.primary.get())))
+        self.display_result()
+
+    def display_result(self, _event=None):
+        if not self.member_names:
+            self.clear("請先從工具列的「變形元件…」新增避震器。")
+            return
+        if self.time is None:
+            self.clear("設定「輪跳與轉向…」後按「開始求解」，即可查看目前工況的避震器行程。")
+            return
+        history_a = self.histories[self.primary.get()]
+        history_b = self.histories.get(self.secondary.get())
+        field = self.field.get()
+        key, unit, note = DAMPER_HISTORY_FIELDS[field]
+        primary = ((field, getattr(history_a, key) * 1000.),)
+        comparison = ((field, getattr(history_b, key) * 1000.),) if history_b else ()
+        columns = []
+        for label, (quantity, units, _) in DAMPER_HISTORY_FIELDS.items():
+            prefix = "A " if history_b else ""
+            columns.append((f"{prefix}{label} ({units})", getattr(history_a, quantity) * 1000.))
+            if history_b:
+                columns.append((f"B {label} ({units})", getattr(history_b, quantity) * 1000.))
+        if history_b:
+            note += " A 為實線，B 為虛線。"
+        self.note.set(note)
+        self.show(self.time, primary, unit, self.plot.index or 0, columns=columns, comparison=comparison)
+
+
+class DamperSweepView(SignalView):
+    def __init__(self, parent, begin_job, set_status):
+        super().__init__(parent, self.seek_sweep, "ROLL 幅度 (mm)")
+        self.begin_job = begin_job
+        self.set_status = set_status
+        self.model = self.sweep = None
+        self.sample_index = 0
+        self.axles = {}
+        self.member_names = ()
+        self.busy = False
+
+        self.axle = tk.StringVar(self)
+        self.mode = tk.StringVar(self, value="ROLL")
+        self.chart_field = tk.StringVar(self, value=DAMPER_SWEEP_FIELDS[0])
+        self.primary = tk.StringVar(self)
+        self.secondary = tk.StringVar(self)
+        self.absolute = tk.BooleanVar(self)
+        choices = ttk.Frame(self.controls)
+        choices.pack(fill="x", pady=(0, 8))
+        self.axle_picker = picker(choices, 0, "車軸", self.axle, width=9, command=self.invalidate)
+        self.mode_picker = picker(choices, 1, "掃描", self.mode, ("ROLL", "HEAVE"),
+                                  width=9, command=self.change_mode)
+        self.primary_picker = picker(choices, 2, "避震器 A", self.primary, width=23, command=self.select_members)
+        self.secondary_picker = picker(choices, 3, "避震器 B（選填）", self.secondary, width=23,
+                                       command=self.select_members)
+        self.chart_picker = picker(choices, 4, "曲線", self.chart_field, width=15, command=self.display_sweep)
+
+        scan = ttk.Frame(self.controls)
+        scan.pack(fill="x")
+        self.inputs = {
+            mode: tuple(tk.StringVar(self, value=value) for value in defaults)
+            for mode, defaults in (("ROLL", ("0", "40", "0")), ("HEAVE", ("-40", "40", "0")))
+        }
+        for variables in self.inputs.values():
+            for variable in variables:
+                variable.trace_add("write", self.invalidate)
+        self.fixed_label = tk.StringVar(self)
+        self.entries = []
+        for column, label in enumerate(("下限 (mm)", "上限 (mm)", "")):
+            heading = ttk.Label(scan, text=label) if label else ttk.Label(scan, textvariable=self.fixed_label)
+            heading.grid(row=0, column=column, sticky="w", padx=(0, 8))
+            entry = ttk.Entry(scan, width=11)
+            entry.grid(row=1, column=column, sticky="ew", padx=(0, 8))
+            entry.bind("<Return>", lambda _event: self.run_sweep())
+            self.entries.append(entry)
+        self.abs_check = ttk.Checkbutton(scan, text="取絕對值（伸縮變化量）", variable=self.absolute,
+                                         command=self.display_sweep)
+        self.abs_check.grid(row=1, column=3, sticky="w", padx=(4, 12))
+        self.run_button = ttk.Button(scan, text="計算掃描", command=self.run_sweep)
+        self.run_button.grid(row=1, column=4, sticky="w")
+        self.change_mode()
+
+    def set_model(self, model):
+        self.model = model
+        labels = {"F": "前軸", "R": "後軸"}
+        self.axles = {labels[axle]: axle for axle in damper_axles(model)}
+        self.axle_picker.configure(values=tuple(self.axles))
+        if self.axle.get() not in self.axles:
+            self.axle.set(next(iter(self.axles), ""))
+        self.member_names = tuple(member.name for member in model.deformable_members) if model else ()
+        if self.primary.get() not in self.member_names:
+            self.primary.set(next(iter(self.member_names), ""))
+        if self.secondary.get() not in self.member_names or self.secondary.get() == self.primary.get():
+            self.secondary.set("")
+        self.invalidate()
+        self.select_members()
+
+    def set_busy(self, busy):
+        self.busy = busy
+        enabled = not busy and bool(self.axles and self.member_names)
+        for combo in (self.axle_picker, self.mode_picker, self.primary_picker):
+            combo.configure(state="readonly" if enabled else "disabled")
+        self.secondary_picker.configure(state="readonly" if enabled and len(self.member_names) > 1 else "disabled")
+        self.chart_picker.configure(state="readonly" if enabled and self.mode.get() == "ROLL" else "disabled")
+        for widget in (*self.entries, self.abs_check, self.run_button):
+            widget.configure(state="normal" if enabled else "disabled")
+
+    def select_members(self, _event=None):
+        self.primary_picker.configure(values=tuple(name for name in self.member_names if name != self.secondary.get()))
+        self.secondary_picker.configure(values=("", *(name for name in self.member_names if name != self.primary.get())))
+        self.display_sweep()
+
+    def change_mode(self, _event=None):
+        roll = self.mode.get() == "ROLL"
+        self.x_label = self.plot.x_label = "ROLL 幅度 (mm)" if roll else "HEAVE (mm)"
+        self.fixed_label.set("固定 HEAVE (mm)" if roll else "固定 ROLL (mm)")
+        self.chart_picker.configure(values=DAMPER_SWEEP_FIELDS if roll else DAMPER_SWEEP_FIELDS[:1])
+        if not roll:
+            self.chart_field.set(DAMPER_SWEEP_FIELDS[0])
+        for entry, variable in zip(self.entries, self.inputs[self.mode.get()]):
+            entry.configure(textvariable=variable)
+        self.invalidate()
+        self.set_busy(self.busy)
+
+    def invalidate(self, *_):
+        self.sweep = None
+        if not self.axles:
+            note = "請載入具有同軸左右輪心 WC 的標準懸吊模型。"
+        elif not self.member_names:
+            note = "請先從工具列的「變形元件…」新增避震器。"
+        else:
+            note = (
+                "ROLL 為左輪位移減右輪位移。左側 ROLL 取正，右側 ROLL 取負，兩者以相同幅度疊圖。\n"
+                "HEAVE 為左右輪位移和。輪跳正值為上壓，其他車軸及齒條位移維持零。"
+            )
+        self.clear(note)
+
+    def run_sweep(self):
+        axle = self.axles.get(self.axle.get())
+        if self.busy or axle is None or not self.member_names:
+            return
+        mode = self.mode.get()
+        try:
+            lower, upper, fixed = (float(variable.get()) for variable in self.inputs[mode])
+        except ValueError:
+            messagebox.showerror("避震器行程掃描失敗", "上下限與固定值須輸入數值。", parent=self.winfo_toplevel())
+            return
+        self.invalidate()
+        self.begin_job(sweep_dampers, (self.model, axle, mode, (lower, upper), fixed), self.install_sweep,
+                       f"正在計算{self.axle.get()}避震器 {mode} 行程…", "避震器行程掃描失敗")
+
+    def install_sweep(self, sweep):
+        self.sweep = sweep
+        self.sample_index = int(np.argmin(np.abs(sweep.input_mm)))
+        self.display_sweep()
+        self.set_status(f"避震器行程掃描完成 · {len(sweep.input_mm)} 個 {self.mode.get()} 樣本")
+
+    def display_sweep(self, _event=None):
+        sweep = self.sweep
+        if sweep is None:
+            return
+        roll = self.mode.get() == "ROLL"
+        absolute = self.absolute.get()
+        show_difference = roll and self.chart_field.get() == DAMPER_SWEEP_FIELDS[1]
+        labels = ("左側 ROLL", "右側 ROLL") if roll else ("HEAVE",)
+        measure = "伸縮變化量" if absolute else "軸向壓縮量"
+        groups = []
+        differences, columns = [], []
+        for slot, name in (("A", self.primary.get()), ("B", self.secondary.get())):
+            if not name:
+                continue
+            index = sweep.member_names.index(name)
+            values = sweep.compression_mm[index]
+            series = tuple(zip(labels, np.abs(values) if absolute else values))
+            columns.extend((f"{slot} {label} {measure} (mm)", data) for label, data in series)
+            if roll:
+                difference = sweep.roll_difference_pct[index]
+                differences.append((f"{slot} 左右差距 (%)", difference))
+                if show_difference:
+                    series = (("左右差距", difference),)
+            groups.append(series)
+        for label, (left, right) in zip(labels, sweep.wheel_travel_mm):
+            columns.extend(((f"{label} 左輪 (mm)", left), (f"{label} 右輪 (mm)", right)))
+        note = ("左側 ROLL 為正位移差，右側 ROLL 為負位移差。"
+                if roll else "HEAVE 為左右輪位移和。")
+        note += " 伸縮變化量為 |靜態長度 − 當前長度|。" if absolute else " 正值為壓縮，負值為伸長。"
+        if self.secondary.get():
+            note += " A 為實線，B 為虛線。"
+        if roll:
+            note += "\n左右差距為伸縮幅度差除以兩側平均幅度，兩側幅度皆接近零時顯示 0%。"
+        self.note.set(note)
+        unit = DAMPER_SWEEP_FIELDS[1] if show_difference else f"{measure} (mm)"
+        self.show(sweep.input_mm, groups[0], unit, self.sample_index, columns=(*differences, *columns),
+                  comparison=groups[1] if len(groups) > 1 else ())
+
+    def seek_sweep(self, index):
+        self.sample_index = index
+        self.set_index(index)
 
 
 class MotionSettings(tk.Toplevel):
@@ -410,12 +653,15 @@ class Workbench(ttk.Frame):
         super().__init__(root, padding=(18, 12))
         self.root = root
         root.title("Jacobian 運動學工作台")
-        root.geometry("1190x830")
+        height = min(940, max(640, root.winfo_screenheight() - 80))
+        root.geometry(f"1190x{height}")
         root.minsize(960, 640)
         self.pack(fill="both", expand=True)
 
-        self.hardpoints = tk.StringVar(self)
-        self.mechanism = tk.StringVar(self)
+        self.hardpoint_path = None
+        self.hardpoint_table = None
+        self.saved_project = None
+        self.project_name = tk.StringVar(self, value="尚未匯入")
         self.status = tk.StringVar(self)
         self.model = self.result = self.ratio = None
         self.input_points = {}
@@ -424,6 +670,8 @@ class Workbench(ttk.Frame):
         self.job = None
         self.sample_index = 0
         self.geometry_selection_kind = None
+        self.geometry_selections = {"point": (), "rod": ()}
+        self.compare_geometry = tk.BooleanVar(self)
         self.play_anchor = self.play_job = None
         self.build_files()
 
@@ -431,6 +679,7 @@ class Workbench(ttk.Frame):
         self.build_viewport()
         self.build_signals()
         self.build_sweep()
+        self.build_damper()
         self.build_ratio()
         self.tabs.bind("<<NotebookTabChanged>>", lambda _event: self.render_sample())
 
@@ -442,48 +691,35 @@ class Workbench(ttk.Frame):
         self.progress = ttk.Progressbar(footer, mode="indeterminate", length=120)
         self.build_timeline()
         self.tabs.pack(fill="both", expand=True, pady=(12, 8))
-        root.bind("<Control-o>", lambda _event: self.choose_file(self.hardpoints, "硬點表", "*.csv"))
-        if hardpoints is None and mechanism is None:
-            self.load_example()
-        else:
-            self.set_paths(hardpoints, mechanism)
+        root.bind("<Control-o>", lambda _event: self.choose_hardpoints())
+        root.bind("<Control-s>", lambda _event: self.save_current_project())
+        root.protocol("WM_DELETE_WINDOW", self.close_project)
+        self.set_paths(hardpoints or DEFAULT_HARDPOINTS, mechanism)
 
     def build_files(self):
         heading = ttk.Frame(self)
-        heading.pack(fill="x", pady=(0, 9))
+        heading.pack(fill="x")
         ttk.Label(heading, text="Jacobian 運動學工作台", style="Title.TLabel").pack(side="left")
-        suspension_button = ttk.Button(heading, text="懸吊範例", command=self.load_example)
-        suspension_button.pack(side="right")
-        custom_button = ttk.Button(heading, text="自訂機構範例", command=self.load_custom_example)
-        custom_button.pack(side="right", padx=(0, 7))
-        self.task_buttons = [suspension_button, custom_button]
-
-        files = ttk.Frame(self)
-        files.pack(fill="x")
-        files.columnconfigure(1, weight=1)
-        for row, (label, variable, suffix) in enumerate((
-            ("硬點表 CSV", self.hardpoints, "*.csv"),
-            ("自訂懸吊 JSON（選填）", self.mechanism, "*.json"),
-        )):
-            ttk.Label(files, text=label).grid(row=row, column=0, sticky="w", padx=(0, 10), pady=3)
-            ttk.Entry(files, textvariable=variable, state="readonly").grid(row=row, column=1, sticky="ew", pady=3)
-            open_button = ttk.Button(files, text="瀏覽…",
-                                     command=lambda var=variable, title=label, ext=suffix: self.choose_file(var, title, ext))
-            open_button.grid(row=row, column=2, padx=(7, 0), pady=3)
-            self.task_buttons.append(open_button)
-        clear_button = ttk.Button(files, text="清除", command=lambda: self.set_paths(self.hardpoints.get(), None))
-        clear_button.grid(row=1, column=3, padx=(7, 0))
-        self.task_buttons.append(clear_button)
+        files = ttk.Frame(heading)
+        files.pack(side="right")
+        open_button = ttk.Button(files, text="匯入 CSV…", command=self.choose_hardpoints)
+        open_button.pack(side="left")
+        ttk.Label(files, textvariable=self.project_name, style="Muted.TLabel", width=32).pack(side="left", padx=8)
+        self.save_button = ttk.Button(files, text="存檔", command=self.save_current_project, state="disabled")
+        self.save_button.pack(side="left")
+        self.task_buttons = [open_button]
 
         actions = ttk.Frame(self)
         actions.pack(fill="x", pady=(8, 0))
         geometry = ttk.Button(actions, text="硬點與輪胎設定…", command=self.configure_geometry)
         geometry.pack(side="left", padx=(0, 7))
+        deformable = ttk.Button(actions, text="變形元件…", command=self.configure_deformable)
+        deformable.pack(side="left", padx=(0, 7))
         settings = ttk.Button(actions, text="輪跳與轉向…", command=self.configure_motion)
         settings.pack(side="left")
         solve_button = ttk.Button(actions, text="開始求解", command=self.run_solve, style="Accent.TButton")
         solve_button.pack(side="left", padx=(7, 0))
-        self.task_buttons.extend((geometry, settings, solve_button))
+        self.task_buttons.extend((geometry, deformable, settings, solve_button))
         self.motion_summary = tk.StringVar(self, value="使用機構預設的時間、樣本數與行程。")
         self.export_button = ttk.Button(actions, text="匯出 CSV…", command=self.save_results, state="disabled")
         self.export_button.pack(side="right")
@@ -505,6 +741,7 @@ class Workbench(ttk.Frame):
         labels = tk.BooleanVar(self)
         ttk.Checkbutton(tools, text="節點名稱", variable=labels,
                         command=lambda: self.viewport.set_labels_visible(labels.get())).pack(side="left")
+        self.comparison_checkbutton(tools).pack(side="left", padx=(10, 0))
         ttk.Label(tools, text="左鍵拖曳旋轉  ·  右鍵拖曳平移  ·  滾輪縮放", style="Muted.TLabel").pack(side="right")
 
         self.viewport = MechanismViewport(self.geometry_tab, on_pick=self.pick_geometry)
@@ -567,6 +804,8 @@ class Workbench(ttk.Frame):
             if current == str(view):
                 view.set_index(self.sample_index)
                 break
+        if current == str(self.damper_tab) and self.damper_tab.select() == str(self.damper_result):
+            self.damper_result.set_index(self.sample_index)
 
     def toggle_playback(self):
         if self.result is None:
@@ -608,19 +847,60 @@ class Workbench(ttk.Frame):
             self.play_anchor = (perf_counter(), self.result.time[self.sample_index])
 
     def pick_geometry(self, kind, name):
-        self.geometry_selection_kind = kind
-        if kind == "point":
-            self.point_name.set(name)
-            self.show_point()
+        selected = self.geometry_selections[kind]
+        if not self.compare_geometry.get():
+            selected = (name,)
+        elif name in selected:
+            selected = tuple(current for current in selected if current != name)
         else:
-            self.rod_name.set(name)
-            self.show_rod()
+            selected = (*selected[-1:], name)
+        self.set_geometry_selection(kind, selected)
+
+    def pick_signal(self, kind, slot, name):
+        selected = list(self.geometry_selections[kind])
+        selected[slot:slot + 1] = (name,)
+        self.set_geometry_selection(kind, tuple(selected))
+
+    def set_geometry_selection(self, kind, selected):
+        self.geometry_selections[kind] = selected
+        self.geometry_selection_kind = kind
         self.sync_geometry_selection()
+        (self.show_point if kind == "point" else self.show_rod)()
+
+    def comparison_checkbutton(self, parent):
+        return ttk.Checkbutton(parent, text="比較模式", variable=self.compare_geometry,
+                               command=self.change_geometry_comparison)
+
+    def change_geometry_comparison(self):
+        if not self.compare_geometry.get():
+            for kind, selected in self.geometry_selections.items():
+                self.geometry_selections[kind] = selected[:1]
+        self.sync_geometry_selection()
+        self.show_point()
+        self.show_rod()
 
     def sync_geometry_selection(self):
-        point, rod = self.point_name.get(), self.rod_name.get()
-        self.viewport.set_selection(point or None, rod or None)
-        self.geometry_names.set(f"目前節點  {point or '—'}    ｜    目前桿件  {rod or '—'}")
+        points = self.geometry_selections["point"]
+        rods = self.geometry_selections["rod"]
+        self.viewport.set_selection(points, rods)
+        point_names = "  /  ".join(f"{slot} {name}" for slot, name in zip("AB", points))
+        rod_names = "  /  ".join(f"{slot} {name}" for slot, name in zip("AB", rods))
+        self.geometry_names.set(f"節點  {point_names or '—'}    ｜    桿件  {rod_names or '—'}")
+        choices = {
+            "point": () if self.model is None else tuple(
+                name for name in self.model.point_names if name not in self.model.internal_points
+            ),
+            "rod": () if self.model is None else tuple(link.name for link in self.model.links),
+        }
+        for kind, pickers in self.geometry_pickers.items():
+            selected = self.geometry_selections[kind]
+            primary, secondary = (selected + ("", ""))[:2]
+            for slot, (value, combo) in enumerate(pickers):
+                name, other = (primary, secondary) if slot == 0 else (secondary, primary)
+                available = tuple(choice for choice in choices[kind] if choice != other)
+                enabled = available and (slot == 0 or (primary and self.compare_geometry.get()))
+                combo.configure(values=available, state="readonly" if enabled else "disabled")
+                value.set(name)
         self.show_geometry_detail()
 
     def show_geometry_detail(self):
@@ -628,12 +908,18 @@ class Workbench(ttk.Frame):
         if self.model is None:
             self.geometry_detail.set("")
             return
-        kind = self.geometry_selection_kind
-        if kind is None:
+        selected = self.geometry_selections.get(self.geometry_selection_kind, ())
+        if not selected:
             self.geometry_detail.set("點選節點查看 XYZ 座標，或點選桿件查看兩端點與長度。")
             return
-        name = self.point_name.get() if kind == "point" else self.rod_name.get()
         position = self.model.reference if self.result is None else self.result.position[self.sample_index]
+        kind = self.geometry_selection_kind
+        details = [f"{slot} {self.describe_geometry(kind, name, position)}" for slot, name in zip("AB", selected)]
+        self.geometry_detail.set("\n".join(details))
+        if self.result is not None:
+            self.inspect_button.configure(state="normal")
+
+    def describe_geometry(self, kind, name, position):
         node_names = self.model.point_names
         if kind == "point":
             index = node_names.index(name)
@@ -644,14 +930,15 @@ class Workbench(ttk.Frame):
                 delta = self.result.displacement[self.sample_index, index] * 1000.
                 changes = "   ".join(f"{axis} {value:.3f}" for axis, value in zip(DISPLACEMENT_AXES, delta))
                 detail += f"  ·  {changes} mm"
-            self.geometry_detail.set(detail)
-        else:
-            link = next(link for link in self.model.links if link.name == name)
-            a, b = node_names.index(link.a), node_names.index(link.b)
-            length = np.linalg.norm(position[b] - position[a]) * 1000.
-            self.geometry_detail.set(f"{name}  ·  {link.a} → {link.b}  ·  長度 {length:.3f} mm")
-        if self.result is not None:
-            self.inspect_button.configure(state="normal")
+            return detail
+        link = next(link for link in self.model.links if link.name == name)
+        a, b = node_names.index(link.a), node_names.index(link.b)
+        length = np.linalg.norm(position[b] - position[a]) * 1000.
+        detail = f"{name}  ·  {link.a} → {link.b}  ·  長度 {length:.3f} mm"
+        if any(member.name == name for member in self.model.deformable_members):
+            reference_length = np.linalg.norm(self.model.reference[b] - self.model.reference[a]) * 1000.
+            detail += f"  ·  軸向壓縮量 {reference_length - length:.3f} mm"
+        return detail
 
     def open_geometry_signal(self):
         if self.geometry_selection_kind is None or self.result is None:
@@ -664,17 +951,24 @@ class Workbench(ttk.Frame):
         self.tabs.add(self.points, text="節點")
         self.tabs.add(self.rods, text="桿件")
 
-        self.point_name = tk.StringVar(self)
         self.point_field = tk.StringVar(self, value=next(iter(POINT_FIELDS)))
-        self.point_picker = picker(self.points.controls, 0, "節點", self.point_name, width=28,
-                                   command=lambda _event: self.pick_geometry("point", self.point_name.get()))
-        picker(self.points.controls, 1, "訊號", self.point_field, tuple(POINT_FIELDS), command=self.show_point)
-
-        self.rod_name = tk.StringVar(self)
         self.rod_field = tk.StringVar(self, value=ROD_FIELDS[0])
-        self.rod_picker = picker(self.rods.controls, 0, "桿件", self.rod_name, width=28,
-                                 command=lambda _event: self.pick_geometry("rod", self.rod_name.get()))
-        picker(self.rods.controls, 1, "訊號", self.rod_field, ROD_FIELDS, command=self.show_rod)
+        self.geometry_pickers = {
+            "point": self.build_geometry_pickers(self.points.controls, "point", "節點"),
+            "rod": self.build_geometry_pickers(self.rods.controls, "rod", "桿件"),
+        }
+        picker(self.points.controls, 2, "訊號", self.point_field, tuple(POINT_FIELDS), command=self.show_point)
+        picker(self.rods.controls, 2, "訊號", self.rod_field, ROD_FIELDS, command=self.show_rod)
+
+    def build_geometry_pickers(self, parent, kind, label):
+        pickers = []
+        for slot, suffix in enumerate("AB"):
+            value = tk.StringVar(self)
+            combo = picker(parent, slot, f"{label} {suffix}", value, width=25,
+                           command=lambda _event, slot=slot, value=value: self.pick_signal(kind, slot, value.get()))
+            pickers.append((value, combo))
+        self.comparison_checkbutton(parent).grid(row=1, column=3, sticky="w", padx=(4, 0))
+        return pickers
 
     def build_sweep(self):
         self.suspension_tab = ttk.Notebook(self.tabs)
@@ -697,6 +991,15 @@ class Workbench(ttk.Frame):
         self.sweep_button = ttk.Button(controls, text="計算掃描", command=self.run_sweep)
         self.sweep_button.grid(row=1, column=6, sticky="w")
         self.build_front_axle()
+
+    def build_damper(self):
+        self.damper_tab = ttk.Notebook(self.tabs)
+        self.tabs.add(self.damper_tab, text="避震器行程")
+        self.damper_result = DamperResultView(self.damper_tab, self.seek_sample)
+        self.damper_tab.add(self.damper_result, text="求解結果")
+        self.damper_view = DamperSweepView(self.damper_tab, self.begin_job, self.status.set)
+        self.damper_tab.add(self.damper_view, text="ROLL／HEAVE 掃描")
+        self.damper_tab.bind("<<NotebookTabChanged>>", lambda _event: self.render_sample())
 
     def sweep_inputs(self, controls, first_column, fields, run, invalidate):
         variables, entries = [], []
@@ -733,6 +1036,7 @@ class Workbench(ttk.Frame):
         self.sweep_corner_picker.configure(values=tuple(self.sweep_choices))
         if self.sweep_corner.get() not in self.sweep_choices:
             self.sweep_corner.set(next(iter(self.sweep_choices), ""))
+        self.damper_view.set_model(self.model)
         self.change_sweep_corner()
         self.invalidate_axle_sweep()
 
@@ -749,6 +1053,7 @@ class Workbench(ttk.Frame):
         axle_state = "normal" if self.job is None and has_front_axle(self.model) else "disabled"
         for widget in (*self.axle_entries, self.axle_button):
             widget.configure(state=axle_state)
+        self.damper_view.set_busy(self.job is not None)
 
     def change_sweep_corner(self, _event=None):
         self.update_sweep_controls()
@@ -886,66 +1191,118 @@ class Workbench(ttk.Frame):
         picker(controls, 5, "曲線", self.ratio_field, RATIO_FIELDS, width=12, command=self.show_pair)
         ttk.Button(controls, text="更新", command=self.refresh_pair).grid(row=1, column=6, sticky="se")
 
-    def choose_file(self, variable, label, suffix):
-        if self.job is not None:
+    def choose_hardpoints(self):
+        if self.job is not None or self.root.grab_current() is not None:
             return
-        current = variable.get() or self.hardpoints.get()
-        path = filedialog.askopenfilename(parent=self.root, title=f"選擇{label}",
-                                         initialdir=str(Path(current).parent) if current else None,
-                                         filetypes=((label, suffix), ("所有檔案", "*.*")))
-        if path:
-            if variable is self.hardpoints:
-                self.set_paths(path, self.mechanism.get())
-            else:
-                self.set_paths(self.hardpoints.get(), path)
+        path = filedialog.askopenfilename(parent=self.root, title="選擇硬點表 CSV",
+                                         initialdir=str(self.hardpoint_path.parent) if self.hardpoint_path else None,
+                                         filetypes=CSV_FILE_TYPES)
+        if path and self.confirm_project_changes():
+            self.set_paths(path)
 
-    def load_example(self):
-        self.set_paths(EXAMPLES / "hardpoints.csv", None)
+    def project_state(self):
+        return self.input_points, self.model.pushrod_mounts, self.tires, self.options, self.model.deformable_members
 
-    def load_custom_example(self):
-        self.set_paths(EXAMPLES / "pushrod_rocker.csv", EXAMPLES / "pushrod_rocker.json")
+    @property
+    def project_changed(self):
+        return self.model is not None and self.project_state() != self.saved_project
 
-    def set_paths(self, hardpoints, mechanism):
-        self.hardpoints.set(str(hardpoints) if hardpoints else "")
-        self.mechanism.set(str(mechanism) if mechanism else "")
-        self.model = None
-        self.input_points = {}
-        self.tires = {}
-        self.options = {}
-        self.motion_summary.set("使用機構預設的時間、樣本數與行程。")
-        self.clear_results(reset_selection=True)
-        self.tabs.select(self.geometry_tab)
-        if not self.hardpoints.get():
-            self.status.set("選擇硬點表，或開啟內附範例。")
-            return
+    def update_project_name(self):
+        marker = " *" if self.project_changed else ""
+        self.project_name.set(self.hardpoint_path.name + marker)
+
+    def save_current_project(self):
+        if self.model is None or self.root.grab_current() is not None:
+            return False
+        path = self.hardpoint_path
+        update_source = path != DEFAULT_HARDPOINTS.resolve()
+        if not update_source:
+            projects = EXAMPLES.parent / "projects"
+            chosen = filedialog.asksaveasfilename(parent=self.root, title="另存懸吊專案",
+                                                  initialdir=str(projects if projects.is_dir() else EXAMPLES.parent),
+                                                  initialfile="suspension_project.csv", defaultextension=".csv",
+                                                  filetypes=CSV_FILE_TYPES)
+            if not chosen:
+                return False
+            path = Path(chosen).resolve()
+            if path == DEFAULT_HARDPOINTS.resolve():
+                messagebox.showerror("請另存專案", "請選擇新的 CSV 檔名來儲存專案。", parent=self.root)
+                return False
         try:
-            self.viewport.set_model(self.read_model(), tires=self.tires)
+            self.hardpoint_table = save_project(path, self.hardpoint_table, *self.project_state(),
+                                                update_source=update_source)
         except (OSError, ValueError) as error:
+            messagebox.showerror("存檔失敗", str(error), parent=self.root)
+            return False
+        self.hardpoint_path = path
+        self.saved_project = self.project_state()
+        self.update_project_name()
+        self.status.set(f"已存檔 · {path.name}")
+        return True
+
+    def confirm_project_changes(self):
+        if not self.project_changed:
+            return True
+        save = messagebox.askyesnocancel("儲存懸吊專案", f"「{self.hardpoint_path.name}」有尚未存檔的變更。要存檔嗎？",
+                                         parent=self.root)
+        if save is None:
+            return False
+        return not save or self.save_current_project()
+
+    def close_project(self):
+        dialog = self.root.grab_current()
+        if dialog is not None:
+            dialog.lift()
+            return
+        if self.confirm_project_changes():
+            self.root.destroy()
+
+    def set_paths(self, hardpoints, mechanism=None):
+        try:
+            path = Path(hardpoints).resolve()
+            table, model, tires, options = load_project(path, mechanism)
+        except (OSError, ValueError, RuntimeError) as error:
             self.status.set(str(error))
             return
-        self.update_sweep_model()
-        settings = self.model.reference_settings
-        if settings is not None:
-            self.motion_summary.set(f"基準輪跳 +{settings.bump_mm:g} mm · {self.model.duration:g} s · {settings.samples} 個樣本")
-        if not self.model.standard_suspension:
-            self.status.set(f"已載入自訂機構 · {self.model.name} · 按「開始求解」")
+        self.hardpoint_path, self.hardpoint_table, self.mechanism = path, table, mechanism
+        self.model, self.input_points, self.tires, self.options = model, table.points, tires, options
+        self.saved_project = self.project_state()
+        self.update_project_name()
+        self.save_button.configure(state="normal")
+        self.motion_summary.set(f"{options['duration']:g} s · {options['samples']} 個樣本")
+        self.clear_results(reset_selection=True)
+        self.tabs.select(self.geometry_tab)
+        if not model.standard_suspension:
+            self.status.set(f"已載入自訂機構 · {model.name} · 按「開始求解」")
             return
-        has_rack = any(drive.name == "FRONT_RACK" for drive in self.model.drives)
+        has_rack = any(drive.name == "FRONT_RACK" for drive in model.drives)
         rack = "已定義前齒條" if has_rack else "可補上 RACK 和 TOE 啟用前齒條"
-        pushrods = sum(link.name.endswith("_PUSH_ROD") for link in self.model.links)
+        pushrods = sum(link.name.endswith("_PUSH_ROD") for link in model.links)
         self.status.set(f"已載入靜態幾何 · {rack} · {pushrods} 支推桿")
 
     def read_model(self):
         if self.model is None:
-            if not self.hardpoints.get():
-                raise ValueError("請選擇硬點 CSV 檔案。")
-            try:
-                points = read_hardpoints(self.hardpoints.get())
-            except (csv.Error, UnicodeError) as error:
-                raise ValueError(f"無法讀取 UTF-8 硬點 CSV。{error}") from error
-            self.model = load_model(self.hardpoints.get(), self.mechanism.get() or None, points=points)
-            self.input_points = points
+            raise ValueError("請選擇有效的硬點 CSV 檔案。")
         return self.model
+
+    def configure_deformable(self):
+        try:
+            model = self.read_model()
+        except ValueError as error:
+            messagebox.showerror("無法讀取機構", str(error), parent=self.root)
+            return
+        self.pause_playback()
+        DeformableSettings(self.root, model, self.set_deformable_members)
+
+    def set_deformable_members(self, members):
+        if members == self.model.deformable_members:
+            return
+        self.model = load_model(self.hardpoint_path, self.mechanism, points=self.input_points,
+                                pushrod_mounts=dict(self.model.pushrod_mounts), deformable_members=members)
+        self.update_project_name()
+        self.clear_results(reset_selection=True)
+        self.tabs.select(self.geometry_tab)
+        self.status.set("變形元件已更新。按「開始求解」計算新的曲線。")
 
     def configure_geometry(self):
         try:
@@ -956,20 +1313,25 @@ class Workbench(ttk.Frame):
         tires = {corner: self.tires.get(corner, TireSetup()) for corner in CORNER_LABELS
                  if f"{corner}_WC" in model.point_names}
         self.pause_playback()
-        GeometrySettings(self.root, self.input_points, tires, self.set_geometry)
+        GeometrySettings(self.root, self.input_points, tires, model.pushrod_mounts, self.set_geometry)
 
-    def set_geometry(self, points, tires):
+    def set_geometry(self, points, tires, pushrod_mounts):
         coordinates_changed = points != self.input_points
+        mounts_changed = pushrod_mounts != dict(self.model.pushrod_mounts)
+        geometry_changed = coordinates_changed or mounts_changed
         alignment_changed = any((setup.toe_deg, setup.camber_deg) != (previous.toe_deg, previous.camber_deg)
                                 for corner, setup in tires.items()
                                 for previous in (self.tires.get(corner, TireSetup()),))
-        if coordinates_changed:
-            model = load_model(self.hardpoints.get(), self.mechanism.get() or None, points=points)
+        if geometry_changed:
+            model = load_model(self.hardpoint_path, self.mechanism, points=points,
+                               pushrod_mounts=pushrod_mounts, deformable_members=self.model.deformable_members)
             self.model, self.input_points = model, points
         self.tires = tires
-        if coordinates_changed:
+        self.update_project_name()
+        if geometry_changed:
             self.clear_results(reset_selection=True)
-            self.status.set("硬點已更新。按「開始求解」計算新的曲線。")
+            updated = "推桿外端接法" if mounts_changed else "硬點"
+            self.status.set(f"{updated}已更新。按「開始求解」計算新的曲線。")
         else:
             positions = None if self.result is None else self.result.position
             self.viewport.set_model(self.model, positions, tires=tires)
@@ -993,6 +1355,7 @@ class Workbench(ttk.Frame):
 
     def set_motion(self, options):
         self.options = options
+        self.update_project_name()
         self.motion_summary.set(f"{options['duration']:g} s · {options['samples']} 個樣本")
         self.clear_results()
         self.status.set("輪跳與轉向設定已更新。按「開始求解」計算新的曲線。")
@@ -1007,15 +1370,17 @@ class Workbench(ttk.Frame):
         self.reset_button.configure(state="disabled")
         self.time_label.set("靜態姿態")
         self.export_button.configure(state="disabled")
-        self.points.clear()
-        self.rods.clear()
+        self.points.clear("完成求解後可檢視曲線與樣本。")
+        self.rods.clear("完成求解後可檢視曲線與樣本。")
+        self.damper_result.set_solution(self.model, None)
         self.pair.clear()
-        for combo in (self.point_picker, self.rod_picker, self.input_picker, self.output_picker):
+        for combo in (self.input_picker, self.output_picker):
             combo.configure(values=())
         self.rate_picker.configure(values=(PATH_RATE,))
         if reset_selection:
             self.geometry_selection_kind = None
-            for variable in (self.point_name, self.rod_name, self.input_name, self.output_name, self.rate_source):
+            self.geometry_selections = {"point": (), "rod": ()}
+            for variable in (self.input_name, self.output_name, self.rate_source):
                 variable.set("")
             self.update_sweep_model()
         self.viewport.set_model(self.model, tires=self.tires)
@@ -1077,24 +1442,25 @@ class Workbench(ttk.Frame):
         self.reset_button.configure(state="normal")
         names = tuple(name for name in self.model.point_names if name not in self.model.internal_points)
         rods = tuple(link.name for link in self.model.links)
-        for combo in (self.point_picker, self.input_picker, self.output_picker):
+        for combo in (self.input_picker, self.output_picker):
             combo.configure(values=names)
-        self.rod_picker.configure(values=rods)
-        if self.rod_name.get() not in rods:
-            self.rod_name.set(rods[0] if rods else "")
         drives = tuple(drive for drive in self.model.drives if not drive.locked)
         self.drive_choices = {f"驅動：{drive.name}": drive.name for drive in drives}
         sources = (PATH_RATE, *self.drive_choices)
         self.rate_picker.configure(values=sources)
         if self.rate_source.get() not in sources:
             self.rate_source.set(next(iter(self.drive_choices), PATH_RATE))
-        first = drives[0].point if drives else names[0]
-        if self.point_name.get() not in names:
-            self.point_name.set(first)
+        if not self.compare_geometry.get():
+            first = drives[0].point if drives and drives[0].point in names else names[0]
+            if not self.geometry_selections["point"]:
+                self.geometry_selections["point"] = (first,)
+            if not self.geometry_selections["rod"]:
+                self.geometry_selections["rod"] = rods[:1]
         if self.input_name.get() not in names:
             self.set_default_pair(result, drives)
         self.show_point()
         self.show_rod()
+        self.damper_result.set_solution(self.model, result)
         self.refresh_pair()
         self.sync_geometry_selection()
         self.set_sample(0)
@@ -1124,9 +1490,11 @@ class Workbench(ttk.Frame):
     def show_point(self, _event=None):
         if self.result is None:
             return
-        index = self.model.point_names.index(self.point_name.get())
-        field, unit = POINT_FIELDS[self.point_field.get()]
-        values = getattr(self.result, field)[:, index, :] * 1000
+        selected = self.geometry_selections["point"]
+        if not selected:
+            self.points.clear("請選擇節點以查看曲線。")
+            return
+        field, unit, magnitude_label = POINT_FIELDS[self.point_field.get()]
         axes = AXES
         note = "模型座標系中的 X、Y、Z 分量。"
         if field == "displacement":
@@ -1134,8 +1502,18 @@ class Workbench(ttk.Frame):
             note = "各軸位移為當前位置減去該節點的原始靜態座標。"
         elif field == "position":
             note = "模型座標系中的絕對 X、Y、Z 位置。"
-        self.points.note.set(note)
-        self.points.show(self.result.time, tuple(zip(axes, values.T)), unit, self.sample_index)
+        if magnitude_label:
+            note += f" {magnitude_label}為三軸分量的向量大小。"
+        vectors = getattr(self.result, field)
+        groups = []
+        for name in selected:
+            index = self.result.point_names.index(name)
+            components = vectors[:, index, :] * 1000
+            series = tuple(zip(axes, components.T))
+            if magnitude_label:
+                series += ((magnitude_label, np.linalg.norm(components, axis=1)),)
+            groups.append(series)
+        self.show_geometry_series(self.points, groups, unit, note)
 
     def show_rod(self, _event=None):
         if self.result is None:
@@ -1143,23 +1521,59 @@ class Workbench(ttk.Frame):
         if not self.model.links:
             self.rods.clear("本機構沒有定義桿件。")
             return
-        index = next(index for index, link in enumerate(self.model.links) if link.name == self.rod_name.get())
+        selected = self.geometry_selections["rod"]
+        if not selected:
+            self.rods.clear("請選擇桿件以查看曲線。")
+            return
+        indices = [self.result.link_names.index(name) for name in selected]
         field = self.rod_field.get()
+        if field in ("長度", "軸向壓縮量"):
+            groups = []
+            for index in indices:
+                link = self.model.links[index]
+                a, b = (self.result.point_names.index(name) for name in (link.a, link.b))
+                delta = self.result.position[:, b] - self.result.position[:, a]
+                length = np.linalg.norm(delta, axis=1)
+                static_length = np.linalg.norm(self.model.reference[b] - self.model.reference[a])
+                values = length if field == "長度" else static_length - length
+                groups.append(((field, values * 1000.),))
+            note = ("兩端點的直線距離。" if field == "長度" else
+                    "靜態長度減去當前長度。正值表示壓縮，負值表示伸長。")
+            self.show_geometry_series(self.rods, groups, "mm", note)
+            return
         if field == ROD_FIELDS[0]:
-            series = tuple((label, getattr(self.result, name)[:, index]) for label, name in (
+            fields = (
                 ("方位角", "azimuth_deg"), ("仰角", "elevation_deg"), ("與初始桿軸夾角", "angle_deg")
-            ))
+            )
+            groups = [tuple((label, getattr(self.result, key)[:, index]) for label, key in fields)
+                      for index in indices]
             unit = "deg"
         else:
             key, unit = ("angular_velocity", "rad/s") if field == ROD_FIELDS[1] else (
                 "angular_acceleration", "rad/s²"
             )
-            series = tuple(zip(AXES, getattr(self.result, key)[:, index, :].T))
+            values = getattr(self.result, key)
+            groups = [tuple(zip(AXES, values[:, index, :].T)) for index in indices]
         note = ("輪向方位角從車輛 +X 朝 +Y 為正，可用於查看轉向及輪跳造成的前束變化。"
-                if self.rod_name.get().endswith("_WHEEL_HEADING") else
+                if any(name.endswith("_WHEEL_HEADING") for name in selected) else
                 "曲線表示桿軸方向的變化。繞桿軸的自轉需額外的幾何定義。")
-        self.rods.note.set(note)
-        self.rods.show(self.result.time, series, unit, self.sample_index)
+        self.show_geometry_series(self.rods, groups, unit, note)
+
+    def show_geometry_series(self, view, groups, unit, note):
+        primary, *others = groups
+        secondary = others[0] if others else ()
+        columns = None
+        if secondary:
+            note += " A 為實線，B 為虛線。"
+            columns = tuple(
+                (f"{slot} {label} ({unit})", values)
+                for pair in zip(primary, secondary)
+                for slot, (label, values) in zip("AB", pair)
+            )
+        elif self.compare_geometry.get():
+            note += " 選擇 B 以比較兩筆資料。"
+        view.note.set(note)
+        view.show(self.result.time, primary, unit, self.sample_index, columns=columns, comparison=secondary)
 
     def invalidate_pair(self, *_):
         if self.ratio is not None:

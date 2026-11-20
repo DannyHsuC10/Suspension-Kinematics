@@ -6,6 +6,7 @@ import unittest
 import numpy as np
 
 from JacobianKinematicsLab.model import CORNERS, EXAMPLES, JOINTS, MOUNTS, load_model, make_motion, read_hardpoints
+from JacobianKinematicsLab.project import load_project, save_project
 from JacobianKinematicsLab.results import export_results, motion_ratio
 from JacobianKinematicsLab.solver import solve
 from JacobianKinematicsLab.suspension import _ackermann_percent, sweep_front_axle, sweep_suspension
@@ -83,6 +84,84 @@ class ExampleIntegrationTests(unittest.TestCase):
         ratio = motion_ratio(result, "FL_WC", "FL_PUSH_IN", drive="FL_WC_Z")
         self.assertTrue(np.isfinite(ratio.motion_ratio).all())
         np.testing.assert_allclose(abs(ratio.motion_ratio) * ratio.mechanical_advantage, 1.)
+
+    def test_pushrod_outboard_mount_follows_the_selected_rigid_body(self):
+        path = EXAMPLES / "hardpoints.csv"
+        points = read_hardpoints(path)
+        outboard = "FL_PUSH_OUT_UCA"
+        points[outboard] = tuple(np.asarray(points[outboard]) + [.012, -.008, .015])
+        baseline = load_model(path, points=points)
+        anchors_by_mount = {"UCA": ("FL_UCA_F", "FL_UCA_R", "FL_UBJ"),
+                            "LCA": ("FL_LCA_F", "FL_LCA_R", "FL_LBJ"),
+                            "UPRIGHT": ("FL_UBJ", "FL_LBJ", "FL_TOE")}
+        peak_positions = []
+        for mount, anchors in anchors_by_mount.items():
+            with self.subTest(mount=mount):
+                model = load_model(path, points=points, pushrod_mounts={"FL": mount})
+                self.assertEqual(dict(model.pushrod_mounts), dict(baseline.pushrod_mounts, FL=mount))
+                self.assertEqual(model.links, baseline.links)
+                self.assertEqual(model.fixed, baseline.fixed)
+                np.testing.assert_array_equal(model.reference, baseline.reference)
+                motion = make_motion(model, samples=5, amplitudes_mm={"FRONT_RACK": 4})
+                result = solve(model, motion)
+                out_index = model.point_names.index(outboard)
+                anchor_indices = [model.point_names.index(name) for name in (*anchors, "FL_PUSH_IN")]
+                lengths = np.linalg.norm(result.position[:, out_index, None] - result.position[:, anchor_indices],
+                                         axis=-1)
+                np.testing.assert_allclose(lengths - lengths[0], 0., atol=1e-10)
+                peak_positions.append(result.position[2, out_index])
+        for a, b in ((0, 1), (0, 2), (1, 2)):
+            self.assertGreater(np.linalg.norm(peak_positions[a] - peak_positions[b]), 1e-5)
+
+    def test_pushrod_mount_override_preserves_legacy_hardpoint_names(self):
+        path = EXAMPLES / "hardpoints.csv"
+        points = read_hardpoints(path)
+        points["FL_PUSH_OUT"] = points.pop("FL_PUSH_OUT_UCA")
+        points["FR_PUSH_OUT_UPRIGHT"] = points.pop("FR_PUSH_OUT_UCA")
+        self.assertEqual(dict(load_model(path, points=points).pushrod_mounts),
+                         {"FL": "LCA", "FR": "UPRIGHT", "RL": "UCA", "RR": "UCA"})
+        model = load_model(path, points=points, pushrod_mounts={"FL": "UPRIGHT", "FR": "LCA"})
+        self.assertEqual(dict(model.pushrod_mounts), {"FL": "UPRIGHT", "FR": "LCA", "RL": "UCA", "RR": "UCA"})
+        self.assertIn("FL_PUSH_OUT", model.point_names)
+        self.assertIn("FR_PUSH_OUT_UPRIGHT", model.point_names)
+
+    def test_project_round_trip_preserves_csv_columns_and_applied_settings(self):
+        points = read_hardpoints(EXAMPLES / "hardpoints.csv")
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "vehicle.csv"
+            with path.open("w", encoding="utf-8-sig", newline="") as handle:
+                writer = csv.writer(handle)
+                writer.writerow(("Corner", "Point", "X_mm", "Y_mm", "Z_mm", "Notes"))
+                for name, xyz in points.items():
+                    writer.writerow((*name.split("_", 1), *(value * 1000 for value in xyz), "CAD, revision 2"))
+            table, model, tires, options = load_project(path)
+            updated = dict(table.points, FL_RACK=(-.125, *table.points["FL_RACK"][1:]))
+            mounts = dict(model.pushrod_mounts, FL="LCA")
+            tires["FL"] = TireSetup(toe_deg=.8, camber_deg=-2.)
+            options["amplitudes_mm"]["FL_WC_Z"] = 12.5
+            options["samples"] = 31
+            save_project(path, table, updated, mounts, tires, options, update_source=True)
+
+            self.assertTrue(path.read_bytes().startswith(b"\xef\xbb\xbf"))
+            reopened, reloaded_model, reloaded_tires, reloaded_options = load_project(path)
+            self.assertEqual(reopened.headers[:-1], table.headers)
+            self.assertEqual(reopened.points, updated)
+            self.assertEqual([row[5] for row in reopened.rows], [row[5] for row in table.rows])
+            self.assertEqual(dict(reloaded_model.pushrod_mounts), mounts)
+            self.assertEqual(reloaded_tires, tires)
+            self.assertEqual(reloaded_options, options)
+
+    def test_project_save_preserves_external_edits(self):
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "vehicle.csv"
+            path.write_bytes((EXAMPLES / "hardpoints.csv").read_bytes())
+            table, model, tires, options = load_project(path)
+            external = path.read_bytes() + b"\r\n"
+            path.write_bytes(external)
+            with self.assertRaisesRegex(ValueError, "CSV 已變更"):
+                save_project(path, table, table.points, model.pushrod_mounts, tires, options, update_source=True)
+            self.assertEqual(path.read_bytes(), external)
+            self.assertEqual(list(path.parent.iterdir()), [path])
 
     def test_tilted_rack_uses_measured_axis_and_independent_profile(self):
         points = read_hardpoints(EXAMPLES / "hardpoints.csv")
@@ -178,7 +257,12 @@ class ExampleIntegrationTests(unittest.TestCase):
         self.assertTrue(np.isnan(percentages[3:]).all())
 
     def test_bundled_custom_mechanism_loads_and_drives_the_rocker(self):
-        model = load_model(EXAMPLES / "pushrod_rocker.csv", EXAMPLES / "pushrod_rocker.json")
+        points = {"CHASSIS_A": (-.05, 0., 0.), "CHASSIS_B": (.05, 0., 0.),
+                  "ROCKER_TIP": (0., .1, 0.), "PUSHROD_SLIDER": (0., .1, -.2)}
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "hardpoints.csv"
+            write_points(path, points)
+            model = load_model(path, EXAMPLES / "pushrod_rocker.json")
         result = solve(model, make_motion(model))
         slider, tip = (model.point_names.index(name) for name in ("PUSHROD_SLIDER", "ROCKER_TIP"))
         middle = len(result.time) // 2
