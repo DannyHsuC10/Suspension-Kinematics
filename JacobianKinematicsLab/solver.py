@@ -133,7 +133,7 @@ class _Mechanism:
         self.axes = self.reference_axes[active]
         all_lengths = np.linalg.norm(self.reference_axes, axis=1)
         if np.any((all_lengths == 0) | ~np.isfinite(all_lengths)):
-            raise Unreachable("固定長度桿件的端點重合或距離無效。")
+            raise Unreachable("桿件的靜態端點重合或距離無效。")
         self.lengths = all_lengths[active]
         scale = float(np.median(self.lengths)) if self.lengths.size else 1.0
         self.position_tolerance = 2e-11 * scale
@@ -286,6 +286,9 @@ class _Mechanism:
         elevation = np.degrees(np.arctan2(axes[..., 2], horizontal))
         angle = np.degrees(np.arctan2(np.linalg.norm(np.cross(self.reference_axes, axes), axis=2),
                                        np.einsum("li,tli->tl", self.reference_axes, axes)))
+        collapsed = length_squared == 0.
+        elevation[collapsed] = angle[collapsed] = np.nan
+        length_squared[collapsed] = np.nan
         omega = np.cross(axes, relative_velocity) / length_squared[..., None]
         length_term = 2 * np.einsum("tli,tli->tl", axes, relative_velocity) / length_squared
         alpha = np.cross(axes, relative_acceleration) / length_squared[..., None] - length_term[..., None] * omega

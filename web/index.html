@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Analyze suspension motion, steering, dampers, and Jacobian-based kinematics in your browser.">
+  <meta name="theme-color" content="#111d31">
+  <title>SuspensionKinematicsLab</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23111d31'/%3E%3Cpath d='M8 8 24 16 8 24' fill='none' stroke='%2360e0c6' stroke-width='2'/%3E%3Cg fill='%2360e0c6'%3E%3Ccircle cx='8' cy='8' r='3'/%3E%3Ccircle cx='24' cy='16' r='3'/%3E%3Ccircle cx='8' cy='24' r='3'/%3E%3C/g%3E%3C/svg%3E">
+  <link rel="stylesheet" href="styles.css">
+  <script type="module" src="app.mjs"></script>
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+      <div><p class="eyebrow">Suspension analysis</p><h1>SuspensionKinematicsLab</h1></div>
+    </div>
+    <nav class="toolbar" aria-label="Site navigation">
+      <a class="nav-link" href="./" aria-current="page">Lab</a>
+      <a class="nav-link" href="method.html">Jacobian method</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="project-bar" aria-label="Project files">
+      <div class="project-heading"><span class="eyebrow">Project</span><strong id="project-name">Four-wheel suspension</strong></div>
+      <div class="toolbar">
+        <button type="button" id="import-project" data-engine disabled>Import CSV / JSON</button>
+        <button type="button" id="download-json" data-engine disabled>Download JSON</button>
+        <details class="file-menu" id="project-menu">
+          <summary>More project actions</summary>
+          <div class="menu-body">
+            <button type="button" id="download-project-csv" data-engine disabled>Download CSV project</button>
+            <button type="button" id="import-mechanism" data-engine disabled>Import mechanism JSON</button>
+            <button type="button" id="load-example" data-engine disabled>Load example</button>
+            <button type="button" id="load-damper-example" data-engine disabled>Load damper example</button>
+          </div>
+        </details>
+        <input type="file" id="project-file" accept=".csv,.json,text/csv,application/json" multiple hidden>
+        <input type="file" id="mechanism-file" accept=".json,application/json" hidden>
+      </div>
+    </section>
+
+    <div class="workbench">
+      <aside class="panel setup" aria-labelledby="setup-title">
+        <div class="panel-title"><h2 id="setup-title">Model &amp; inputs</h2></div>
+        <div class="editor-actions">
+          <button id="edit-geometry" data-engine disabled>Hardpoints &amp; tires</button>
+          <button id="edit-members" data-engine disabled>Deformable members</button>
+        </div>
+        <div class="status-area">
+          <button type="submit" form="motion-form" class="primary" id="solve" data-engine disabled>Solve kinematics</button>
+          <progress id="operation-progress" aria-label="Solver activity"></progress>
+          <p id="status" role="status" aria-live="polite">Loading the Python solver and NumPy…</p>
+          <button type="button" id="retry" hidden>Reload solver</button>
+        </div>
+        <form id="motion-form">
+          <fieldset id="motion-fields" disabled>
+            <legend>Wheel travel &amp; steering</legend>
+            <div class="field-grid">
+              <label>Duration (s)<input type="number" id="duration" value="2" step="any" min="0.000001" required></label>
+              <label>Samples<input type="number" id="samples" value="21" min="2" step="1" required></label>
+            </div>
+            <div id="drive-settings"></div>
+            <div id="reference-presets" class="toolbar" aria-label="Reference travels" hidden>
+              <button id="bump-preset" type="button">Bump</button>
+              <button id="droop-preset" type="button">Droop</button>
+            </div>
+          </fieldset>
+        </form>
+      </aside>
+
+      <section class="panel results" aria-label="Suspension analysis results">
+        <div class="results-head">
+          <div class="tab-bar" id="result-tabs" role="tablist" aria-label="Analysis views">
+            <button role="tab" id="tab-motion" aria-controls="view-motion" aria-selected="true" data-tab="motion">3D motion</button>
+            <button role="tab" id="tab-points" aria-controls="view-signals" aria-selected="false" tabindex="-1" data-tab="points">Points</button>
+            <button role="tab" id="tab-rods" aria-controls="view-signals" aria-selected="false" tabindex="-1" data-tab="rods">Rods</button>
+            <button role="tab" id="tab-ratio" aria-controls="view-ratio" aria-selected="false" tabindex="-1" data-tab="ratio">Motion ratio</button>
+            <button role="tab" id="tab-sweeps" aria-controls="view-sweeps" aria-selected="false" tabindex="-1" data-tab="sweeps">Suspension sweeps</button>
+            <button role="tab" id="tab-dampers" aria-controls="view-dampers" aria-selected="false" tabindex="-1" data-tab="dampers">Dampers</button>
+          </div>
+          <details class="file-menu" id="results-menu">
+            <summary>Export results</summary>
+            <div class="menu-body">
+              <button data-export="all" disabled>All result CSVs (ZIP)</button>
+              <button data-export="point" disabled>Point kinematics CSV</button>
+              <button data-export="rod" disabled>Rod kinematics CSV</button>
+              <button data-export="ratio" disabled>Motion ratio CSV</button>
+              <button data-export="damper" disabled>Damper kinematics CSV</button>
+            </div>
+          </details>
+        </div>
+
+        <section id="view-motion" role="tabpanel" aria-labelledby="tab-motion">
+          <div class="visual">
+            <div class="visual-toolbar">
+              <label>View<select id="camera" aria-label="Camera view"><option value="orbit">3D orbit</option><option value="front">Front</option><option value="side">Side</option><option value="top">Top</option></select></label>
+              <button id="reset-camera" type="button">Reset view</button>
+              <label class="check"><input type="checkbox" id="show-reference"> Static reference</label>
+              <label class="check"><input type="checkbox" id="show-labels"> Point labels</label>
+              <label class="check"><input type="checkbox" id="compare-3d"> Compare A/B</label>
+            </div>
+            <canvas id="viewport" aria-label="Suspension geometry. Drag to orbit, right-drag to pan, and scroll to zoom."></canvas>
+            <div class="geometry-legend" aria-label="Geometry color legend">
+              <span><i class="key fixed"></i>Fixed point</span><span><i class="key moving"></i>Moving point</span><span><i class="key link"></i>Link</span><span><i class="key rack"></i>Rack</span><span><i class="key tie"></i>Tie rod</span><span><i class="key push"></i>Pushrod</span><span><i class="key damper"></i>Deformable</span>
+            </div>
+          </div>
+          <div class="selection-summary">
+            <p id="geometry-detail">Select a point or rod to inspect its coordinates or length.</p>
+            <button id="open-selection" type="button" hidden>View signal</button>
+          </div>
+          <p class="help geometry-help">Drag to orbit · Shift-drag or right-drag to pan · Scroll to zoom</p>
+        </section>
+
+        <section id="view-signals" role="tabpanel" aria-labelledby="tab-points" hidden>
+          <div class="control-strip" id="signal-fields">
+            <label><span id="signal-name-a">Point A</span><select id="signal-a"></select></label>
+            <label id="signal-b-field" hidden><span id="signal-name-b">Point B</span><select id="signal-b"></select></label>
+            <label>Signal<select id="signal-type"></select></label>
+            <label class="check"><input type="checkbox" id="compare-signals"> Compare A/B</label>
+          </div>
+          <div id="signals-output"></div>
+        </section>
+
+        <section id="view-ratio" role="tabpanel" aria-labelledby="tab-ratio" hidden>
+          <form id="ratio-form" class="control-strip">
+            <label>Input point<select id="ratio-in" required></select></label>
+            <label>Input direction<input id="ratio-in-dir" value="z" placeholder="z" required></label>
+            <label>Output point<select id="ratio-out" required></select></label>
+            <label>Output direction<input id="ratio-out-dir" value="z" placeholder="z" required></label>
+            <label>Derivative basis<select id="ratio-drive"></select></label>
+            <button id="calculate-ratio" class="primary" disabled>Calculate</button>
+          </form>
+          <p class="help control-help">Use signed axes such as z and −y, or enter an XYZ vector such as 1,0,2.</p>
+          <div id="ratio-output"></div>
+        </section>
+
+        <section id="view-sweeps" role="tabpanel" aria-labelledby="tab-sweeps" hidden>
+          <div class="sub-tabs" id="sweep-nav" aria-label="Suspension sweep type">
+            <button type="button" data-sweep="suspension" aria-pressed="true">Single-wheel travel</button>
+            <button type="button" data-sweep="front_axle" aria-pressed="false">Front-axle steering</button>
+          </div>
+          <form id="sweep-form" class="scan-form">
+            <div id="wheel-sweep-fields" class="control-strip">
+              <label>Corner<select id="sweep-corner"></select></label>
+              <label>Travel min (mm)<input id="travel-min" type="number" value="-30" step="any" required></label>
+              <label>Travel max (mm)<input id="travel-max" type="number" value="20" step="any" required></label>
+            </div>
+            <div id="axle-sweep-fields" class="control-strip" hidden>
+              <label>Heave (mm)<input id="axle-heave" type="number" value="0" step="any" required disabled></label>
+              <label>Roll (°)<input id="axle-roll" type="number" value="0" step="any" required disabled></label>
+              <label>Wheelbase (mm)<input id="axle-wheelbase" type="number" min="0.001" step="any" placeholder="Use geometry" disabled></label>
+            </div>
+            <div id="rack-sweep-fields" class="control-strip">
+              <label>Rack min (mm)<input id="rack-min" type="number" value="0" step="any" required></label>
+              <label>Rack max (mm)<input id="rack-max" type="number" value="0" step="any" required></label>
+            </div>
+            <button id="calculate-sweep" class="primary" disabled>Calculate sweep</button>
+          </form>
+          <div class="control-strip metric-strip"><label>Plot metric<select id="sweep-metric"></select></label></div>
+          <div id="sweep-output"></div>
+        </section>
+
+        <section id="view-dampers" role="tabpanel" aria-labelledby="tab-dampers" hidden>
+          <div class="sub-tabs" id="damper-nav" aria-label="Damper analysis type">
+            <button type="button" data-damper="history" aria-pressed="true">Time history</button>
+            <button type="button" data-damper="scan" aria-pressed="false">Roll / heave sweep</button>
+          </div>
+          <form id="damper-form" class="control-strip" hidden>
+            <label>Axle<select id="damper-axle"></select></label>
+            <label>Mode<select id="damper-mode"><option value="ROLL">Roll</option><option value="HEAVE">Heave</option></select></label>
+            <label>Minimum (mm)<input id="damper-min" type="number" value="0" step="any" required></label>
+            <label>Maximum (mm)<input id="damper-max" type="number" value="30" step="any" required></label>
+            <label><span id="damper-fixed-label">Fixed heave (mm)</span><input id="damper-fixed" type="number" value="0" step="any" required></label>
+            <button id="calculate-damper" class="primary" disabled>Calculate sweep</button>
+          </form>
+          <div class="control-strip metric-strip">
+            <label>Damper A<select id="damper-a"></select></label>
+            <label>Damper B<select id="damper-b"></select></label>
+            <label>Plot metric<select id="damper-metric"></select></label>
+            <label id="damper-abs-field" class="check" hidden><input type="checkbox" id="damper-abs"> Absolute compression</label>
+          </div>
+          <div id="damper-output"></div>
+        </section>
+
+        <div class="playback" id="playback" aria-label="Timeline">
+          <button id="play" disabled type="button">Play</button>
+          <button id="rewind" disabled type="button">Rewind</button>
+          <input id="sample" disabled type="range" min="0" max="0" value="0" aria-label="Sample">
+          <output id="clock" for="sample">Static pose</output>
+          <select id="play-speed" aria-label="Playback speed"><option value=".25">0.25×</option><option value=".5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option></select>
+          <label class="check"><input type="checkbox" id="loop"> Loop</label>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <dialog id="geometry-dialog" aria-labelledby="geometry-title">
+    <form id="geometry-form">
+      <header class="dialog-title"><h2 id="geometry-title">Hardpoints &amp; tires</h2><button type="button" data-close="geometry-dialog">Close</button></header>
+      <div class="dialog-body" id="geometry-fields"></div>
+      <footer><p id="geometry-error" role="alert"></p><button class="primary">Apply geometry</button></footer>
+    </form>
+  </dialog>
+  <dialog id="members-dialog" aria-labelledby="members-title">
+    <form id="members-form">
+      <header class="dialog-title"><h2 id="members-title">Deformable members</h2><button type="button" data-close="members-dialog">Close</button></header>
+      <div class="dialog-body"><p class="help">Specify each endpoint in the static vehicle frame. Chassis ends stay fixed. Rocker ends rotate with the selected rocker.</p><div id="member-fields"></div><button id="add-member" type="button">Add member</button></div>
+      <footer><p id="members-error" role="alert"></p><button class="primary">Apply members</button></footer>
+    </form>
+  </dialog>
+</body>
+</html>

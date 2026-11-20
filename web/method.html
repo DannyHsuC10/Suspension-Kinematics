@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Set up a suspension study and learn how the constraint Jacobian solves position, velocity, and acceleration.">
+  <meta name="theme-color" content="#111d31">
+  <title>Jacobian Method | SuspensionKinematicsLab</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23111d31'/%3E%3Cpath d='M8 8 24 16 8 24' fill='none' stroke='%2360e0c6' stroke-width='2'/%3E%3Cg fill='%2360e0c6'%3E%3Ccircle cx='8' cy='8' r='3'/%3E%3Ccircle cx='24' cy='16' r='3'/%3E%3Ccircle cx='8' cy='24' r='3'/%3E%3C/g%3E%3C/svg%3E">
+  <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="./method.css">
+</head>
+<body class="method-page">
+  <header class="app-header">
+    <a class="brand method-brand" href="./">
+      <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+      <div><p class="eyebrow">Suspension analysis</p><span class="method-brand-title">SuspensionKinematicsLab</span></div>
+    </a>
+    <nav class="toolbar" aria-label="Site navigation">
+      <a class="nav-link" href="./">Lab</a>
+      <a class="nav-link" href="./method.html" aria-current="page">Jacobian method</a>
+    </nav>
+  </header>
+  <main class="method-layout">
+    <aside class="method-sidebar">
+      <nav aria-label="On this page">
+        <h2>On this page</h2>
+        <a href="#workflow">Run an analysis</a>
+        <a href="#hardpoints">Hardpoints and projects</a>
+        <a href="#constraints">Mechanism constraints</a>
+        <a href="#position">Position</a>
+        <a href="#derivatives">Velocity and acceleration</a>
+        <a href="#results">Reading results</a>
+        <a href="#sweeps">Suspension sweeps</a>
+      </nav>
+    </aside>
+    <article class="method-content">
+      <div class="method-intro">
+        <h1>Jacobian Method</h1>
+        <p>SuspensionKinematicsLab starts with static hardpoints. It solves the geometry at each prescribed wheel and rack displacement, then differentiates the same constraints to find point velocities, accelerations, and local sensitivities.</p>
+      </div>
+      <section id="workflow">
+        <h2>Run an analysis</h2>
+        <ol>
+          <li>Use <strong>Import CSV / JSON</strong> to open a study, or choose <strong>Load example</strong> in <strong>More project actions</strong>. Inspect the static geometry in <strong>3D motion</strong>.</li>
+          <li>Use <strong>Hardpoints &amp; tires</strong> to edit coordinates, tire dimensions, static toe and camber, and pushrod mounts. To study damper travel, use <strong>Deformable members</strong> to add a member and attach each endpoint to the chassis or to a defined rocker.</li>
+          <li>Set a duration, sample count, and motion profile for each wheel or rack drive. Positive wheel travel is bump, meaning the wheel moves up relative to the chassis. Positive rack travel follows the axis from the right rack point toward the left one. A model with a single front rack point uses +Y.</li>
+          <li>Choose <strong>Solve kinematics</strong>. Use the timeline, chart, or results table to inspect a sample and select points or rods in the 3D view to follow their motion.</li>
+          <li>Use <strong>Download JSON</strong> or <strong>Download CSV project</strong> to resume a study later. Open <strong>Export results</strong> to download solved histories as CSV files.</li>
+        </ol>
+        <p>Each drive starts at zero and uses one of three profiles. <strong>Pulse</strong> goes smoothly to the signed amplitude and back to zero. <strong>Sine</strong> runs a full positive and negative cycle. <strong>Ramp</strong> reaches the signed amplitude at constant speed over the selected duration.</p>
+      </section>
+
+      <section id="hardpoints">
+        <h2>Hardpoints and projects</h2>
+        <p>The vehicle frame uses +X forward, +Y left, and +Z up. Use UTF-8 CSV with <code>name,x_m,y_m,z_m</code> or <code>name,x_mm,y_mm,z_mm</code>. Each name must be unique. A <code>point</code> column also works and can be paired with a <code>corner</code> column.</p>
+        <p>Prefix standard suspension hardpoint names with <code>FL_</code>, <code>FR_</code>, <code>RL_</code>, or <code>RR_</code>, for example <code>FL_WC</code>. Each included corner needs the four control arm pivots and both ball joints.</p>
+        <div class="method-table">
+          <table>
+            <thead><tr><th scope="col">Hardpoint suffix</th><th scope="col">Role</th></tr></thead>
+            <tbody>
+              <tr><td><code>UCA_F</code>, <code>UCA_R</code>, <code>LCA_F</code>, <code>LCA_R</code></td><td>Upper and lower control arm chassis pivots, front and rear.</td></tr>
+              <tr><td><code>UBJ</code>, <code>LBJ</code>, <code>WC</code></td><td>Upper and lower ball joints and wheel center. If the wheel center is omitted, the travel drive acts on the upper ball joint.</td></tr>
+              <tr><td><code>RACK</code>, <code>TOE</code></td><td>Inner and outer tie rod endpoints. Provide them as a pair. Rear inner endpoints are fixed.</td></tr>
+              <tr><td><code>PUSH_OUT</code>, <code>PUSH_IN</code>, <code>ROCKER_A</code>, <code>ROCKER_B</code></td><td>Pushrod endpoints and the rocker hinge axis. The default outboard mount is the lower control arm. Use <code>PUSH_OUT_UCA</code> or <code>PUSH_OUT_UPRIGHT</code> for a different default.</td></tr>
+              <tr><td><code>FORWARD</code></td><td>Optional wheel heading marker. Its position relative to <code>WC</code> defines the default heading. When omitted, the reference marker is placed forward of the wheel center.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Tire toe and camber in <strong>Hardpoints &amp; tires</strong> set the static tire orientation relative to the upright. Positive toe is toe-in and positive camber tilts the top of the wheel outward. A blank toe field takes the horizontal heading from <code>FORWARD</code>, or zero degrees when no heading marker was supplied.</p>
+        <p>A project JSON stores hardpoints under <code>points</code> as names mapped to XYZ arrays in metres. The full format uses <code>"version": 1</code> and adds tire setup, pushrod mounts, drive profiles, and deformable members. Deformable endpoints also use metres in JSON. A desktop project CSV stores settings in its <code>jacobian_project</code> column.</p>
+        <p>For a custom mechanism, select a hardpoint CSV and a matching mechanism JSON together in <strong>Import CSV / JSON</strong>. To use the currently loaded hardpoints, choose <strong>Import mechanism JSON</strong>. You can also open a self-contained project JSON with a <code>mechanism</code> field.</p>
+        <p>The mechanism maps hardpoint names to <code>fixed</code> points, distance <code>links</code>, rigid <code>attachments</code>, and projected displacement <code>drives</code>. A link with <code>constrained: false</code> is available for display and measurement. A drive with <code>locked: true</code> holds its projection at the reference value. Its optional <code>b</code> field changes the projection from a single point to the separation between two points.</p>
+      </section>
+
+      <section id="constraints">
+        <h2>Mechanism constraints</h2>
+        <p>Let <var>q</var> collect the XYZ displacements of every moving point from its reference coordinates. Fixed points have zero displacement. Let <var>u</var>(<var>t</var>) contain the prescribed drive displacements. The solver assembles the following equations into a residual vector <var>F</var>(<var>q</var>, <var>u</var>).</p>
+        <ul>
+          <li><strong>Rigid links.</strong> For a link with axis <strong>r</strong> = <strong>p</strong><sub>B</sub> − <strong>p</strong><sub>A</sub> and reference length <var>L</var>, the residual is (<strong>r</strong> · <strong>r</strong> − <var>L</var><sup>2</sup>) / (2<var>L</var>).</li>
+          <li><strong>Rigid attachments.</strong> Three non-collinear anchors carry a marker point. With <strong>e</strong> = <strong>p</strong><sub>B</sub> − <strong>p</strong><sub>A</sub> and <strong>f</strong> = <strong>p</strong><sub>C</sub> − <strong>p</strong><sub>A</sub>, its position is <strong>p</strong><sub>A</sub> + <var>a</var><strong>e</strong> + <var>b</var><strong>f</strong> + <var>c</var>(<strong>e</strong> × <strong>f</strong>). The coefficients come from the reference geometry. This lets an out-of-plane pushrod or damper mounting point follow its body.</li>
+          <li><strong>Displacement drives.</strong> Each drive subtracts its target displacement from the projection of one point’s displacement, or of the displacement difference between two points, onto a prescribed direction.</li>
+        </ul>
+        <p>The Jacobian <var>J</var> = ∂<var>F</var>/∂<var>q</var> describes how each residual changes when the moving coordinates change. The solver evaluates its rows from the current pose.</p>
+      </section>
+
+      <section id="position">
+        <h2>Position</h2>
+        <div class="method-equation" role="math" aria-label="J times delta q equals minus F"><var>J</var> Δ<var>q</var> = −<var>F</var></div>
+        <p>Starting from the static assembly, the solver uses a least-squares Newton correction Δ<var>q</var>. It reduces the correction when necessary to make the residual smaller and subdivides drive changes to trace the same assembly branch. Once the constraints converge, the solved displacement is added to the static coordinates to give absolute XYZ position.</p>
+        <p>The reference and solved poses must have enough independent constraints to determine every moving coordinate. An underconstrained setup, a near-singular pose, or incompatible travel can stop the solve.</p>
+      </section>
+
+      <section id="derivatives">
+        <h2>Velocity and acceleration</h2>
+        <p>Define <var>B</var> as the mapping that places each drive input in its residual row, so <var>F</var> = <var>G</var>(<var>q</var>) − <var>B</var><var>u</var>(<var>t</var>). The drive profiles have analytic first and second time derivatives.</p>
+        <h3>Velocity</h3>
+        <div class="method-equation" role="math" aria-label="J times q dot equals B times u dot"><var>J</var> <var>q̇</var> = <var>B</var> <var>u̇</var></div>
+        <p>After finding the pose, the solver factors its Jacobian with singular value decomposition and solves for the coordinate velocities. The rigid link and attachment rows have zero right-hand sides because those geometry constraints are time invariant.</p>
+        <h3>Acceleration</h3>
+        <div class="method-equation" role="math" aria-label="J times q double dot equals B times u double dot minus J dot times q dot"><var>J</var> <var>q̈</var> = <var>B</var> <var>ü</var> − <var>J̇</var> <var>q̇</var></div>
+        <p>The same Jacobian factorization yields the accelerations. The last term accounts for the changing constraint geometry. For example, a rigid link’s acceleration right-hand side includes −‖<strong>v</strong><sub>B</sub> − <strong>v</strong><sub>A</sub>‖<sup>2</sup>/<var>L</var>. The attachment rows account for the changing cross product of their anchor vectors. These derivatives are evaluated at each solved pose from the constraint equations.</p>
+      </section>
+
+      <section id="results">
+        <h2>Reading results</h2>
+        <dl>
+          <div><dt>Points</dt><dd>Position is absolute XYZ. Displacement is relative to the static hardpoint. The interface shows lengths in mm and time derivatives in mm/s and mm/s². The <code>point_kinematics.csv</code> download uses m, m/s, and m/s².</dd></div>
+          <div><dt>Rods</dt><dd>The axis points from A to B. Azimuth is measured from +X toward +Y and elevation is positive above the XY plane. The angular velocity <strong>ω</strong> = (<strong>r</strong> × <strong>ṙ</strong>) / ‖<strong>r</strong>‖<sup>2</sup> and its derivative describe the changing axis direction. Measuring spin around that axis requires another orientation reference. The <code>rod_kinematics.csv</code> download uses degrees for angles and radians for angular derivatives.</dd></div>
+          <div><dt>Damper histories</dt><dd>Compression is static length minus current length. Positive compression means the member is shorter than at the reference pose. Positive compression velocity means it is shortening at that instant. The acceleration calculation includes the transverse motion of the endpoints. Use <code>damper_kinematics.csv</code> to export these histories.</dd></div>
+          <div><dt>Motion ratio</dt><dd>Project the input and output points onto measurement directions such as <code>z</code>, <code>-y</code>, or <code>1,0,2</code>. The signed ratio is d<var>s</var><sub>out</sub>/d<var>s</var><sub>in</sub>, and ideal mechanical advantage is |d<var>s</var><sub>in</sub>/d<var>s</var><sub>out</sub>|. Choose the actual time path or one independent drive. The latter uses the corresponding column of ∂<var>q</var>/∂<var>u</var>, found by solving <var>J</var>(∂<var>q</var>/∂<var>u</var>) = <var>B</var> with other drive coordinates held fixed. A zero denominator leaves that ratio blank, and <code>motion_ratio.csv</code> records a per-sample status.</dd></div>
+        </dl>
+      </section>
+
+      <section id="sweeps">
+        <h2>Suspension sweeps</h2>
+        <dl>
+          <div><dt>Single-wheel travel</dt><dd>Sweep one wheel through bump and droop with other wheel drives held at zero. Steered front corners can compare up to three fixed rack positions. Toe-in and top-out camber are positive. Bump steer is toe change from zero wheel travel at the same rack position. Camber gain and bump steer rate use Jacobian sensitivities at fixed rack position, in °/mm. Track is the Y spacing across the axle, and wheelbase is the X spacing along the side.</dd></div>
+          <div><dt>Front axle steering</dt><dd>Sweep the rack while holding front wheel travels at <var>H</var> ± (<var>T</var>/2) tan(<var>R</var>), where <var>H</var> is mean front heave, <var>T</var> is static front track, and <var>R</var> is roll angle. Relative steer is measured against zero rack at the same pose, positive toward the left. Ideal Ackermann is 100% and parallel steering is 0%. The percentage uses the difference of the cotangents of the outer and inner steer magnitudes, divided by static front track over wheelbase and multiplied by 100. With front-only hardpoints, enter the wheelbase to calculate this percentage.</dd></div>
+          <div><dt>Damper ROLL / HEAVE</dt><dd>Here HEAVE is the <em>sum</em> of axle wheel travels, and ROLL is left minus right wheel travel in mm. Left and right travel are (HEAVE + ROLL)/2 and (HEAVE − ROLL)/2. A ROLL sweep compares positive and negative roll at equal magnitude. Its difference percentage divides the absolute difference between the two compression magnitudes by their mean.</dd></div>
+        </dl>
+      </section>
+    </article>
+  </main>
+</body>
+</html>

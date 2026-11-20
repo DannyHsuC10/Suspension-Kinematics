@@ -9,7 +9,41 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 if TYPE_CHECKING:
+    from .model import Model
     from .solver import MotionResult
+
+
+@dataclass(frozen=True)
+class DamperHistory:
+    """Axial compression and its time derivatives in m, m/s, and m/s²."""
+
+    compression: np.ndarray
+    velocity: np.ndarray
+    acceleration: np.ndarray
+
+
+def damper_histories(model: "Model", result: "MotionResult") -> dict[str, DamperHistory]:
+    """Differentiate the distance between each damper's solved endpoints."""
+    if not model.deformable_members:
+        return {}
+    names = tuple(member.name for member in model.deformable_members)
+    links = {link.name: link for link in model.links}
+    points = {name: index for index, name in enumerate(model.point_names)}
+    a, b = np.array([(points[links[name].a], points[links[name].b]) for name in names]).T
+    reference_length = np.linalg.norm(model.reference[b] - model.reference[a], axis=-1)
+    axis = result.position[:, b] - result.position[:, a]
+    relative_velocity = result.velocity[:, b] - result.velocity[:, a]
+    relative_acceleration = result.acceleration[:, b] - result.acceleration[:, a]
+    length = np.linalg.norm(axis, axis=-1)
+    defined_length = np.where(length > 0., length, np.nan)
+    direction = axis / defined_length[..., None]
+    length_rate = np.einsum("...i,...i->...", direction, relative_velocity)
+    transverse_velocity = relative_velocity - length_rate[..., None] * direction
+    length_acceleration = (np.einsum("...i,...i->...", direction, relative_acceleration)
+                           + np.sum(transverse_velocity**2, axis=-1) / defined_length)
+    return {name: DamperHistory(reference_length[i] - length[:, i], -length_rate[:, i],
+                                -length_acceleration[:, i])
+            for i, name in enumerate(names)}
 
 
 @dataclass(frozen=True)

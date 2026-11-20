@@ -1,0 +1,142 @@
+.method-page {
+  display: block;
+  min-height: 100vh;
+  height: auto;
+  overflow: visible;
+  background: #eef2f7;
+  color: var(--ink, #15223a);
+}
+
+.method-brand { color: inherit; text-decoration: none; }
+.method-brand-title {
+  font-size: clamp(1.04rem, 3.5vw, 1.44rem);
+  font-weight: 700;
+  letter-spacing: .015em;
+  overflow-wrap: anywhere;
+}
+
+.method-page .method-layout {
+  display: grid;
+  grid-template-columns: minmax(12rem, 16rem) minmax(0, 1fr);
+  grid-template-rows: auto;
+  align-items: start;
+  gap: clamp(1rem, 3vw, 2rem);
+  width: auto;
+  max-width: 80rem;
+  margin-inline: auto;
+  padding: clamp(1rem, 3vw, 2rem) clamp(1rem, 3vw, 2rem) 3rem;
+}
+
+.method-sidebar, .method-content {
+  min-width: 0;
+  border: 1px solid var(--line, #d9e2ec);
+  border-radius: 10px;
+  background: var(--surface, #fff);
+  box-shadow: 0 3px 12px #0d294409;
+}
+
+.method-sidebar {
+  position: sticky;
+  top: 1rem;
+  padding: 1rem;
+}
+
+.method-sidebar nav { display: grid; gap: .22rem; }
+
+.method-sidebar h2 {
+  margin: 0 0 .4rem;
+  padding: .3rem .5rem;
+  font-size: .875rem;
+}
+
+.method-sidebar a {
+  padding: .4rem .5rem;
+  border-radius: 6px;
+  color: var(--accent, #076d64);
+  font-size: .925rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.method-sidebar a:hover {
+  background: #e1f3ef;
+  text-decoration: underline;
+  text-underline-offset: .15em;
+}
+
+.method-content {
+  overflow-wrap: break-word;
+  padding: clamp(1rem, 4vw, 2.5rem);
+  font-size: 1rem;
+  line-height: 1.6;
+}
+
+.method-content h1 {
+  margin: 0;
+  font-size: clamp(1.75rem, 4vw, 2.55rem);
+  line-height: 1.13;
+  letter-spacing: -.025em;
+}
+
+.method-content h2, .method-content h3 { margin: 0; line-height: 1.25; }
+.method-content h2 { font-size: clamp(1.25rem, 3vw, 1.55rem); }
+.method-content h3 { margin-top: 1.35rem; font-size: 1.05rem; }
+.method-content p { margin: .65rem 0 0; }
+.method-content p, .method-content li, .method-content dd { max-width: 80ch; }
+.method-content strong { font-weight: 650; }
+.method-content section {
+  margin-top: 1.75rem;
+  padding-top: 1.4rem;
+  border-top: 1px solid var(--line, #d9e2ec);
+  scroll-margin-top: 2rem;
+}
+
+.method-intro p { max-width: 66ch; color: var(--muted, #51647b); font-size: 1.075rem; }
+.method-content ol, .method-content ul { margin: .65rem 0 0; padding-left: 1.5rem; }
+.method-content li + li { margin-top: .55rem; }
+.method-content dl { margin: .65rem 0 0; }
+.method-content dl > div + div { margin-top: .9rem; }
+.method-content dt { font-weight: 650; }
+.method-content dd { margin: .15rem 0 0; }
+
+.method-content code {
+  padding: .12em .28em;
+  border-radius: 4px;
+  background: #edf3f8;
+  font: .9em ui-monospace, Consolas, monospace;
+}
+
+.method-equation {
+  margin-top: .75rem;
+  padding: .55em .8em;
+  border-left: 3px solid var(--accent, #076d64);
+  border-radius: 0 6px 6px 0;
+  background: #edf5f6;
+  font: 1.2rem/1.5 "Cambria Math", Cambria, Georgia, serif;
+}
+
+.method-table {
+  margin-top: .85rem;
+  overflow: auto;
+  border: 1px solid var(--line, #d9e2ec);
+  border-radius: 6px;
+}
+
+.method-table table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+.method-table th, .method-table td {
+  padding: .55rem .65rem;
+  border-bottom: 1px solid var(--line, #d9e2ec);
+  vertical-align: top;
+  text-align: left;
+  white-space: normal;
+}
+.method-table th { background: #ecf2f7; }
+.method-table tr:last-child td { border-bottom: 0; }
+.method-table td:first-child { width: 36%; }
+
+@media (max-width: 46rem) {
+  .method-page .method-layout { grid-template-columns: minmax(0, 1fr); }
+  .method-sidebar { position: static; }
+  .method-sidebar nav { grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr)); }
+  .method-sidebar h2 { grid-column: 1 / -1; }
+}

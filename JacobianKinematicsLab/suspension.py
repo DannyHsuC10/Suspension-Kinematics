@@ -34,6 +34,15 @@ class FrontAxleSweep:
     wheelbase_mm: float | None
 
 
+@dataclass(frozen=True)
+class DamperSweep:
+    input_mm: np.ndarray
+    member_names: tuple[str, ...]
+    wheel_travel_mm: np.ndarray
+    compression_mm: np.ndarray
+    roll_difference_pct: np.ndarray | None = None
+
+
 def sweep_corners(model):
     if model is None or not model.standard_suspension:
         return ()
@@ -49,6 +58,11 @@ def has_steering(model, corner):
 def has_front_axle(model):
     corners = sweep_corners(model)
     return all(corner in corners and has_steering(model, corner) for corner in ("FL", "FR"))
+
+
+def damper_axles(model):
+    corners = set(sweep_corners(model))
+    return tuple(axle for axle in ("F", "R") if {f"{axle}L", f"{axle}R"} <= corners)
 
 
 def _wheel_angles(frame, position, tangent, side):
@@ -196,3 +210,54 @@ def sweep_front_axle(model, heave_mm, roll_deg, rack_limits, wheelbase_mm=None, 
     steer = np.stack(steer)
     return FrontAxleSweep(rack, travel, np.stack(yaw), steer, steer[0] - steer[1],
                           _ackermann_percent(steer, track_mm, wheelbase_mm), track_mm, wheelbase_mm)
+
+
+def _roll_difference_percent(left_compression, right_compression):
+    left, right = np.abs(left_compression), np.abs(right_compression)
+    average = (left + right) / 2.
+    # Ignore sub-micrometre numerical residue at zero travel.
+    difference = np.divide(np.abs(left - right), average, out=np.zeros_like(average), where=average > 1e-7)
+    return difference * 100.
+
+
+def sweep_dampers(model, axle, mode, limits_mm, fixed_mm):
+    """Measure axial compression relative to static length while scanning wheel travel in mm."""
+    if axle not in damper_axles(model):
+        raise ValueError("避震器行程掃描需要所選車軸的左右輪心 WC。")
+    if not model.deformable_members:
+        raise ValueError("請先新增變形元件。")
+    if mode not in ("ROLL", "HEAVE") or not np.isfinite(fixed_mm):
+        raise ValueError("請選擇 ROLL 或 HEAVE，並輸入有限的固定值。")
+    if mode == "ROLL" and limits_mm[0] < 0.:
+        raise ValueError("ROLL 掃描使用位移差的大小，下限須大於或等於零。")
+    values, path, order = _sweep_samples(limits_mm, 21, mode)
+    if mode == "ROLL":
+        cases = (("左側 ROLL", fixed_mm, path), ("右側 ROLL", fixed_mm, -path))
+    else:
+        cases = (("HEAVE", path, fixed_mm),)
+
+    points = {name: i for i, name in enumerate(model.point_names)}
+    links = {link.name: link for link in model.links}
+    names = tuple(member.name for member in model.deformable_members)
+    a, b = np.array([(points[links[name].a], points[links[name].b]) for name in names]).T
+    static_length = np.linalg.norm(model.reference[b] - model.reference[a], axis=1)
+    drives = {drive.name: i for i, drive in enumerate(model.drives)}
+    inputs = [drives[f"{axle}{side}_WC_Z"] for side in "LR"]
+    displacement = np.zeros((len(path), len(drives)))
+    stationary = np.zeros_like(displacement)
+    compression, wheel_travel = [], []
+    for label, heave, roll in cases:
+        travel = np.stack((heave / 2. + roll / 2., heave / 2. - roll / 2.), axis=1)
+        displacement[:, inputs] = travel / 1000.
+        try:
+            result = solve(model, Motion(np.arange(len(path)), displacement, stationary, stationary))
+        except Unreachable as error:
+            coordinate = "" if error.sample is None else f" {path[error.sample]:g} mm"
+            raise ValueError(f"{label}{coordinate}：{error.reason}") from error
+        position = result.position[order]
+        length = np.linalg.norm(position[:, b] - position[:, a], axis=2)
+        compression.append((static_length[:, None] - length.T) * 1000.)
+        wheel_travel.append(travel[order].T)
+    compression = np.stack(compression, axis=1)
+    roll_difference = _roll_difference_percent(compression[:, 0], compression[:, 1]) if mode == "ROLL" else None
+    return DamperSweep(values, names, np.stack(wheel_travel), compression, roll_difference)

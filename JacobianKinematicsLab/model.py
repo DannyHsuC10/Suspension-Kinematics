@@ -3,7 +3,8 @@
 import csv
 import json
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from io import StringIO
 from itertools import combinations
 from pathlib import Path
 
@@ -18,10 +19,22 @@ ALIASES = {"UFI": "UCA_F", "URI": "UCA_R", "LFI": "LCA_F", "LRI": "LCA_R",
            "WHEEL_CENTER": "WC", "ROD_IN": "RACK", "ROD_OUT": "TOE", "TIE_IN": "RACK", "TIE_OUT": "TOE",
            "TIE_ROD_IN": "RACK", "TIE_ROD_OUT": "TOE", "PUSH_OUT_LCA": "PUSH_OUT",
            "PUSHROD_IN": "PUSH_IN", "PUSHROD_OUT": "PUSH_OUT"}
-PUSH_OUTBOARD = ("PUSH_OUT", "PUSH_OUT_UCA", "PUSH_OUT_UPRIGHT")
+PUSH_OUTBOARD = {"PUSH_OUT": "LCA", "PUSH_OUT_UCA": "UCA", "PUSH_OUT_UPRIGHT": "UPRIGHT"}
 PUSH_INBOARD = ("PUSH_IN", "ROCKER_A", "ROCKER_B")
+ROCKER_ANCHORS = ("ROCKER_A", "ROCKER_B", "PUSH_IN")
+CHASSIS = "CHASSIS"
 CONSTRUCTION_POINTS = {"GROUND", "AXIS_TOP", "CONTACT", "CONSTRUCTION_CONTACT"}
 PROFILES = ("pulse", "sine", "ramp")
+
+
+@dataclass(frozen=True)
+class HardpointTable:
+    points: dict[str, tuple[float, float, float]]
+    headers: tuple[str, ...]
+    rows: tuple[tuple[str, ...], ...]
+    coordinate_columns: tuple[int, ...]
+    scale: float
+    content: bytes
 
 
 @dataclass(frozen=True)
@@ -38,6 +51,21 @@ class Attachment:
     a: str
     b: str
     c: str
+
+
+@dataclass(frozen=True)
+class DeformableEnd:
+    """An endpoint in static vehicle coordinates (m), carried by the chassis or a rocker."""
+
+    xyz: tuple[float, float, float]
+    mount: str = CHASSIS
+
+
+@dataclass(frozen=True)
+class DeformableMember:
+    name: str
+    a: DeformableEnd
+    b: DeformableEnd
 
 
 @dataclass(frozen=True)
@@ -74,6 +102,8 @@ class Model:
     reference_settings: ReferenceSettings | None = None
     internal_points: tuple[str, ...] = ()
     standard_suspension: bool = False
+    pushrod_mounts: tuple[tuple[str, str], ...] = ()
+    deformable_members: tuple[DeformableMember, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -96,11 +126,18 @@ def _number(value, label):
 
 def read_hardpoints(path):
     """Read one row per static XYZ point, returning an ordered mapping in metres."""
-    with Path(path).open(encoding="utf-8-sig", newline="") as handle:
+    return read_hardpoint_table(path).points
+
+
+def read_hardpoint_table(path):
+    """Keep the source CSV fields so edits can be written back in its original units."""
+    content = Path(path).read_bytes()
+    with StringIO(content.decode("utf-8-sig"), newline="") as handle:
         reader = csv.DictReader(handle, strict=True)
         if not reader.fieldnames:
             raise ValueError("硬點 CSV 是空的。")
-        reader.fieldnames = [name.strip().lower() for name in reader.fieldnames]
+        original_headers = tuple(reader.fieldnames)
+        reader.fieldnames = [name.strip().lower() for name in original_headers]
         headers = set(reader.fieldnames)
         if len(headers) != len(reader.fieldnames):
             raise ValueError("硬點 CSV 有重複欄名。")
@@ -109,8 +146,10 @@ def read_hardpoints(path):
             raise ValueError("硬點 CSV 需要 name（或 point）及整組 x_m/y_m/z_m 或 x_mm/y_mm/z_mm。")
         unit = units[0]
         scale = .001 if unit == "mm" else 1.
+        coordinate_fields = tuple(f"{axis}_{unit}" for axis in "xyz")
+        coordinate_columns = tuple(reader.fieldnames.index(field) for field in coordinate_fields)
         point_field = "name" if "name" in headers else "point"
-        result = {}
+        points, rows = {}, []
         for row in reader:
             if None in row or None in row.values():
                 raise ValueError(f"硬點 CSV 第 {reader.line_num} 列的欄數不一致。")
@@ -119,21 +158,23 @@ def read_hardpoints(path):
                 raise ValueError(f"硬點 CSV 第 {reader.line_num} 列缺少點名。")
             if point_field == "point" and row.get("corner", "").strip():
                 name = f"{row['corner'].strip()}_{name}"
-            if name in result:
+            if name in points:
                 raise ValueError(f"硬點 CSV 有重複點名 {name}。")
-            result[name] = tuple(_number(row[f"{a}_{unit}"], f"硬點 {name} 的 {a.upper()} ") * scale
-                                 for a in "xyz")
-    if not result:
+            points[name] = tuple(_number(row[field], f"硬點 {name} 的 {axis} ") * scale
+                                 for axis, field in zip("XYZ", coordinate_fields))
+            rows.append(tuple(row.values()))
+    if not points:
         raise ValueError("硬點 CSV 沒有座標列。")
-    return result
+    return HardpointTable(points, original_headers, tuple(rows), coordinate_columns, scale, content)
 
 
 def _model(name, points, fixed, links, drives, duration=2., samples=121, *, attachments=(),
-           reference_settings=None, internal_points=(), standard_suspension=False):
+           reference_settings=None, internal_points=(), standard_suspension=False, pushrod_mounts=()):
     reference = np.array(list(points.values()), dtype=float)
     reference.setflags(write=False)
     return Model(name, tuple(points), reference, tuple(fixed), tuple(links), tuple(drives), duration, samples,
-                 tuple(attachments), reference_settings, tuple(internal_points), standard_suspension)
+                 tuple(attachments), reference_settings, tuple(internal_points), standard_suspension,
+                 tuple(pushrod_mounts))
 
 
 def _upright(corner, local, points, links, drives, attachments):
@@ -181,7 +222,7 @@ def _upright(corner, local, points, links, drives, attachments):
     return anchors
 
 
-def _pushrod(corner, local, upright, fixed, links, attachments):
+def _pushrod(corner, local, upright, fixed, links, attachments, mount):
     outboard = [key for key in PUSH_OUTBOARD if key in local]
     if not outboard and not set(PUSH_INBOARD).intersection(local):
         return
@@ -189,17 +230,21 @@ def _pushrod(corner, local, upright, fixed, links, attachments):
         raise ValueError(f"{corner} 的推桿需提供一個 PUSH_OUT、PUSH_OUT_UCA 或 PUSH_OUT_UPRIGHT，"
                          "以及 PUSH_IN、ROCKER_A、ROCKER_B。")
     out = outboard[0]
-    anchors = {"PUSH_OUT": ("LCA_F", "LCA_R", "LBJ"),
-               "PUSH_OUT_UCA": ("UCA_F", "UCA_R", "UBJ"), "PUSH_OUT_UPRIGHT": upright}[out]
+    mount = PUSH_OUTBOARD[out] if mount is None else mount
+    body_anchors = {"LCA": ("LCA_F", "LCA_R", "LBJ"), "UCA": ("UCA_F", "UCA_R", "UBJ"), "UPRIGHT": upright}
+    if mount not in body_anchors:
+        raise ValueError(f"{corner} 的推桿外端需選擇上 A 臂、下 A 臂或羊角。")
+    anchors = body_anchors[mount]
     if len(anchors) != 3:
-        raise ValueError(f"{corner} 的 PUSH_OUT_UPRIGHT 需要輪心 WC 或轉向拉桿外端 TOE 定義羊角姿態。")
+        raise ValueError(f"{corner} 的推桿外端要裝在羊角上，需提供輪心 WC 或轉向拉桿外端 TOE 定義羊角姿態。")
     attachments.append(Attachment(local[out], *(local[a] for a in anchors)))
-    a, b, inner = (local[key] for key in ("ROCKER_A", "ROCKER_B", "PUSH_IN"))
+    a, b, inner = (local[key] for key in ROCKER_ANCHORS)
     fixed.extend((a, b))
     links.extend((Link(f"{corner}_PUSH_ROD", local[out], inner),
                   Link(f"{corner}_ROCKER_A-IN", a, inner),
                   Link(f"{corner}_ROCKER_B-IN", b, inner),
                   Link(f"{corner}_ROCKER_AXIS", a, b)))
+    return mount
 
 
 def _front_rack(points, links, drives):
@@ -225,17 +270,17 @@ def _front_rack(points, links, drives):
     drives.append(Drive("FRONT_RACK", ends[0], axis))
 
 
-def _suspension_model(points, name, reference_settings=None):
+def _suspension_model(points, name, reference_settings=None, *, pushrod_mounts=None):
     """Infer double wishbones from the lab's standard named static hardpoints."""
     canonical = {}
-    allowed = set(MOUNTS + JOINTS + ("WC", "FORWARD", "RACK", "TOE") + PUSH_OUTBOARD + PUSH_INBOARD)
+    allowed = set(MOUNTS + JOINTS + ("WC", "FORWARD", "RACK", "TOE") + PUSH_INBOARD) | PUSH_OUTBOARD.keys()
     for raw, xyz in points.items():
         corner, _, key = raw.upper().partition("_")
         if corner in CORNERS and key in CONSTRUCTION_POINTS:
             continue
         key = ALIASES.get(key, key)
         if corner not in CORNERS or key not in allowed:
-            raise ValueError(f"硬點 {raw} 不符合懸吊點名規則。請選擇機構 JSON 來定義各點。")
+            raise ValueError(f"硬點 {raw} 不符合標準懸吊點名規則。請參考硬點命名表。")
         qualified = f"{corner}_{key}"
         if qualified in canonical:
             raise ValueError(f"硬點 {qualified} 有重複定義。")
@@ -243,6 +288,8 @@ def _suspension_model(points, name, reference_settings=None):
 
     imported = set(canonical)
     fixed, links, drives, attachments = [], [], [], []
+    overrides = pushrod_mounts or {}
+    mounts = {}
     bump = reference_settings.bump_mm if reference_settings else 25.
     for corner in CORNERS:
         local = {name[len(corner) + 1:]: name for name in canonical if name.startswith(corner + "_")}
@@ -261,16 +308,21 @@ def _suspension_model(points, name, reference_settings=None):
             members.append(("RACK", "TOE"))
         links.extend(Link(f"{corner}_{a}-{b}", local[a], local[b]) for a, b in members)
         anchors = _upright(corner, local, canonical, links, drives, attachments)
-        _pushrod(corner, local, anchors, fixed, links, attachments)
+        mount = _pushrod(corner, local, anchors, fixed, links, attachments, overrides.get(corner))
+        if mount is not None:
+            mounts[corner] = mount
         target = local.get("WC", local["UBJ"])
         drives.append(Drive(f"{target}_Z", target, (0., 0., 1.), amplitude_mm=bump))
     if not links:
         raise ValueError("沒有可建立機構的輪位。")
+    if missing_pushrods := overrides.keys() - mounts.keys():
+        raise ValueError(f"{', '.join(sorted(missing_pushrods))} 沒有可設定的推桿。")
     _front_rack(canonical, links, drives)
     samples = reference_settings.samples if reference_settings else 121
     return _model(name, canonical, fixed, links, drives, samples=samples, attachments=attachments,
                   reference_settings=reference_settings,
-                  internal_points=(name for name in canonical if name not in imported), standard_suspension=True)
+                  internal_points=(name for name in canonical if name not in imported), standard_suspension=True,
+                  pushrod_mounts=mounts.items())
 
 
 def _mapping(value, allowed, required, label):
@@ -343,8 +395,7 @@ def _read_mechanism(points, path):
     with Path(path).open(encoding="utf-8-sig") as handle:
         data = json.load(handle)
     if isinstance(data, dict) and {"vehicle", "front", "rear"} <= data.keys():
-        raise ValueError("此檔案是基準車輛參數 JSON。請用「懸吊範例」載入基準硬點 CSV，"
-                         "或用「自訂機構範例」載入配對的機構 JSON 與硬點 CSV。")
+        raise ValueError("此檔案是基準車輛參數 JSON。--mechanism 需要與硬點 CSV 配對的機構 JSON。")
     data = _mapping(data, ("schema_version", "name", "fixed", "links", "drives", "attachments",
                            "duration_s", "samples"), ("fixed", "links", "drives"), "機構")
     if type(data.get("schema_version", 1)) is not int or data.get("schema_version", 1) != 1:
@@ -398,16 +449,65 @@ def _read_mechanism(points, path):
     return _model(name, points, fixed, links, drives, duration, samples, attachments=attachments)
 
 
-def load_model(hardpoints_path, mechanism_path=None, *, points=None):
+def _add_deformable_members(model, members):
+    members = tuple(members)
+    if not members:
+        return model
+    rocker_corners = dict(model.pushrod_mounts)
+    point_names = {name.casefold() for name in model.point_names}
+    link_names = {link.name.casefold() for link in model.links}
+    points, fixed, links, attachments, definitions = {}, [], [], [], []
+    for member in members:
+        name = _name(member.name, "變形元件")
+        if name.casefold() in link_names:
+            raise ValueError(f"桿件名稱 {name} 已使用。")
+        link_names.add(name.casefold())
+        ends = []
+        for label, end in zip("AB", (member.a, member.b)):
+            point = f"{name}_{label}"
+            if point.casefold() in point_names:
+                raise ValueError(f"端點名稱 {point} 已使用。請更換元件名稱。")
+            if len(end.xyz) != 3:
+                raise ValueError(f"{point} 需要三個 XYZ 數值。")
+            xyz = tuple(_number(value, f"{point} {axis} ") for axis, value in zip("XYZ", end.xyz))
+            if end.mount == CHASSIS:
+                fixed.append(point)
+            elif end.mount in rocker_corners:
+                anchors = tuple(f"{end.mount}_{key}" for key in ROCKER_ANCHORS)
+                attachments.append(Attachment(point, *anchors))
+            else:
+                raise ValueError(f"{point} 選擇的搖臂不存在。")
+            point_names.add(point.casefold())
+            points[point] = xyz
+            ends.append(DeformableEnd(xyz, end.mount))
+        length = math.dist(ends[0].xyz, ends[1].xyz)
+        if not math.isfinite(length) or length == 0.:
+            raise ValueError(f"{name} 的靜態長度須大於零且為有限數值。")
+        links.append(Link(name, f"{name}_A", f"{name}_B", constrained=False))
+        definitions.append(DeformableMember(name, *ends))
+
+    reference = np.concatenate((model.reference, np.asarray(tuple(points.values()))))
+    reference.setflags(write=False)
+    return replace(model, point_names=(*model.point_names, *points), reference=reference,
+                   fixed=(*model.fixed, *fixed), links=(*model.links, *links),
+                   attachments=(*model.attachments, *attachments), deformable_members=tuple(definitions))
+
+
+def load_model(hardpoints_path, mechanism_path=None, *, points=None, pushrod_mounts=None, deformable_members=()):
     """Load spatial hardpoints and an optional explicit mechanism definition."""
     try:
         path = Path(hardpoints_path)
         if points is None:
             points = read_hardpoints(path)
         if mechanism_path is not None:
-            return _read_mechanism(points, mechanism_path)
-        settings = _read_reference_settings() if path.resolve() == EXAMPLES / "hardpoints.csv" else None
-        return _suspension_model(points, settings.name if settings else path.stem, settings)
+            if pushrod_mounts:
+                raise ValueError("自訂機構的推桿接法由機構 JSON 定義。")
+            model = _read_mechanism(points, mechanism_path)
+        else:
+            settings = _read_reference_settings() if path.resolve() == EXAMPLES / "hardpoints.csv" else None
+            model = _suspension_model(points, settings.name if settings else path.stem, settings,
+                                      pushrod_mounts=pushrod_mounts)
+        return _add_deformable_members(model, deformable_members)
     except (csv.Error, UnicodeError) as exc:
         raise ValueError(f"無法讀取 UTF-8 硬點 CSV 或機構 JSON。{exc}") from exc
 
