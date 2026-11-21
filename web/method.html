@@ -43,7 +43,7 @@
       <section id="workflow">
         <h2>Run an analysis</h2>
         <ol>
-          <li>At the bottom of the left settings panel, use <strong>Import CSV / JSON</strong> to open a study, or choose <strong>Load example</strong> in <strong>More project actions</strong>. Inspect the static geometry in <strong>3D motion</strong>.</li>
+          <li>Inspect the reference suspension in <strong>3D motion</strong>. To open another study, use <strong>Import CSV / JSON</strong> at the bottom of the left settings panel.</li>
           <li>Use <strong>Hardpoints &amp; tires</strong> to edit coordinates, tire dimensions, static toe and camber, and pushrod mounts. To study damper travel, use <strong>Deformable members</strong> to add a member and attach each endpoint to the chassis or to a defined rocker.</li>
           <li>Open <strong>Wheel travel &amp; steering</strong> to set a duration, sample count, and motion profile for each wheel or rack drive, then choose <strong>Apply motion</strong>. Positive wheel travel is bump, meaning the wheel moves up relative to the chassis. Positive rack travel follows the axis from the right rack point toward the left one. A model with a single front rack point uses +Y.</li>
           <li>Choose <strong>Solve kinematics</strong>. Use the timeline, chart, or results table to inspect a sample and select points or rods in the 3D view to follow their motion.</li>
@@ -69,7 +69,7 @@
         </div>
         <p>Tire toe and camber in <strong>Hardpoints &amp; tires</strong> set the static tire orientation relative to the upright. Positive toe is toe-in and positive camber tilts the top of the wheel outward. A blank toe field takes the horizontal heading from <code>FORWARD</code>, or zero degrees when no heading marker was supplied.</p>
         <p>A project JSON stores hardpoints under <code>points</code> as names mapped to XYZ arrays in metres. The full format uses <code>"version": 1</code> and adds tire setup, pushrod mounts, drive profiles, and deformable members. Deformable endpoints also use metres in JSON. A desktop project CSV stores settings in its <code>jacobian_project</code> column.</p>
-        <p>For a custom mechanism, select a hardpoint CSV and a matching mechanism JSON together in <strong>Import CSV / JSON</strong>. To use the currently loaded hardpoints, choose <strong>Import mechanism JSON</strong>. You can also open a self-contained project JSON with a <code>mechanism</code> field.</p>
+        <p>For a custom mechanism, use <strong>Import CSV / JSON</strong> to open a complete project JSON with a <code>mechanism</code> field, or select a hardpoint CSV and its matching mechanism JSON together.</p>
         <p>The mechanism maps hardpoint names to <code>fixed</code> points, distance <code>links</code>, rigid <code>attachments</code>, and projected displacement <code>drives</code>. A link with <code>constrained: false</code> is available for display and measurement. A drive with <code>locked: true</code> holds its projection at the reference value. Its optional <code>b</code> field changes the projection from a single point to the separation between two points.</p>
       </section>
 

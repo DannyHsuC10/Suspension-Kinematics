@@ -8,7 +8,7 @@
   <title>SuspensionKinematicsLab</title>
   <link rel="icon" href="suspension-icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="styles.css">
-  <script type="module" src="app.mjs"></script>
+  <script type="module" src="app.mjs?v=project-menu"></script>
 </head>
 <body class="lab-page">
   <header class="app-header">
@@ -46,13 +46,10 @@
             <summary>More project actions</summary>
             <div class="project-actions">
               <button type="button" id="download-project-csv" data-engine disabled>Download CSV project</button>
-              <button type="button" id="import-mechanism" data-engine disabled>Import mechanism JSON</button>
-              <button type="button" id="load-example" data-engine disabled>Load example</button>
               <button type="button" id="load-damper-example" data-engine disabled>Load damper example</button>
             </div>
           </details>
           <input type="file" id="project-file" accept=".csv,.json,text/csv,application/json" multiple hidden>
-          <input type="file" id="mechanism-file" accept=".json,application/json" hidden>
         </section>
       </aside>
 

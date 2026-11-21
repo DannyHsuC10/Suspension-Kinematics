@@ -42,7 +42,6 @@ from JacobianKinematicsLab.wheel_frame import TireSetup, WheelFrame
 
 REFERENCE_CSV = EXAMPLES / "hardpoints.csv"
 PROJECT_FIELDS = {"points", "pushrod_mounts", "tires", "motion", "deformable_members", "mechanism"}
-MECHANISM_FIELDS = {"fixed", "links", "drives"}
 
 
 @dataclass(frozen=True)
@@ -217,12 +216,12 @@ def _load(text=None, filename=None, mechanism=None, example=None):
         filename = "project"
     if filename.lower().endswith(".json") or text.lstrip("\ufeff \t\r\n").startswith("{"):
         data = _json_object(text, "Project")
-        if "points" not in data and (MECHANISM_FIELDS <= data.keys() or {"vehicle", "front", "rear"} <= data.keys()):
-            return _update(mechanism=data)
+        if "points" not in data:
+            raise ValueError("Select a complete project JSON or select a mechanism JSON with its hardpoint CSV.")
         if type(data.get("version", 1)) is not int or data.get("version", 1) != 1:
             raise ValueError("The project JSON version must be 1.")
         if data.keys() - PROJECT_FIELDS - {"version"}:
-            raise ValueError("Project JSON contains unknown fields. Use the project or desktop mechanism schema.")
+            raise ValueError("Project JSON contains unknown fields.")
         points = _hardpoints(data.get("points"))
         with TemporaryDirectory() as directory:
             table = _table_from_points(points, Path(directory) / "hardpoints.csv")

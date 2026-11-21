@@ -264,10 +264,10 @@ function loadProject(payload) {
   });
 }
 
-async function importFiles(event, mechanismOnly = false) {
+async function importFiles(event) {
   const files = [...event.target.files];
   event.target.value = '';
-  if (!files.length || (!mechanismOnly && !mayReplaceProject())) return;
+  if (!files.length || !mayReplaceProject()) return;
   const csv = files.find(file => /\.csv$/i.test(file.name));
   const json = files.find(file => /\.json$/i.test(file.name));
   if (files.length > 2 || files.length === 2 && (!csv || !json)) {
@@ -275,17 +275,8 @@ async function importFiles(event, mechanismOnly = false) {
     return;
   }
   try {
-    if (mechanismOnly) {
-      const mechanism = JSON.parse(await files[0].text());
-      await run('Applying mechanism…', async () => {
-        showModel(await rpc('update', { mechanism }), true);
-        markDirty();
-        status('Custom mechanism loaded.');
-      });
-    } else {
-      const file = csv || json || files[0];
-      await loadProject({ filename: file.name, text: await file.text(), mechanism: csv && json ? await json.text() : undefined });
-    }
+    const file = csv || json || files[0];
+    await loadProject({ filename: file.name, text: await file.text(), mechanism: csv && json ? await json.text() : undefined });
   } catch (error) {
     status(error.message, true);
   }
@@ -903,12 +894,9 @@ submit('motion-form', applyMotion);
 on('bump-preset', 'click', () => applyPreset(1));
 on('droop-preset', 'click', () => applyPreset(-1));
 on('import-project', 'click', () => $('project-file').click());
-on('import-mechanism', 'click', () => $('mechanism-file').click());
 on('project-file', 'change', event => { void importFiles(event); });
-on('mechanism-file', 'change', event => { void importFiles(event, true); });
 on('download-json', 'click', () => { void saveProject('json'); });
 on('download-project-csv', 'click', () => { void saveProject('csv'); });
-on('load-example', 'click', () => { if (mayReplaceProject()) void loadProject({}); });
 on('load-damper-example', 'click', () => { if (mayReplaceProject()) void loadProject({ example: 'damper' }); });
 on('retry', 'click', () => window.location.reload());
 all('.file-menu button').forEach(button => button.addEventListener('click', () => { button.closest('details').open = false; }));
