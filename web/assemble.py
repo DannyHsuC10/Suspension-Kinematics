@@ -11,7 +11,7 @@ WEB_FILES = (
     "visuals.mjs", "downloads.mjs", "worker.js", "lab_backend.py",
 )
 PACKAGE_FILES = (
-    "__init__.py", "model.py", "project.py", "results.py", "solver.py",
+    "__init__.py", "interference.py", "model.py", "project.py", "results.py", "solver.py",
     "suspension.py", "wheel_frame.py", "examples/hardpoints.csv",
     "examples/reference_settings.json",
 )

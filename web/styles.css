@@ -104,6 +104,8 @@ button.primary:enabled:hover, .tab-bar button[aria-selected=true]:hover, .sub-ta
 .status-area { display: grid; gap: .55rem; margin-bottom: .85rem; }
 #status, .help { font-size: .875rem; color: var(--muted); line-height: 1.5; }
 #status[data-error], dialog footer p { color: #a1282d; }
+button.warning-button { border-color: #bc7e28; background: #fff3dc; color: #77480e; }
+button.warning-button:enabled:hover { border-color: #a96a16; background: #ffe6b6; }
 progress { width: 100%; height: .45rem; }
 .results-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: .6rem; margin-bottom: .72rem; }
 .tab-bar, .sub-tabs { display: flex; flex-wrap: wrap; gap: .35rem; }
@@ -158,6 +160,10 @@ dialog form { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; max-h
 dialog footer p { font-size: .875rem; }
 dialog footer button { flex-shrink: 0; }
 #motion-dialog { width: min(680px, calc(100% - 1.5rem)); }
+#interference-dialog[open] { display: grid; grid-template-rows: auto minmax(0, 1fr); }
+#interference-pairs { margin-top: .65rem; }
+#interference-pairs th[scope="row"] { font-weight: 600; }
+#interference-pairs button { font-size: .8125rem; padding: .3rem .5rem; }
 #drive-settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 235px), 1fr)); gap: .5rem .85rem; }
 .settings-group { margin-bottom: .75rem; }
 .settings-group h3 { font-size: 1rem; margin-bottom: .4rem; }

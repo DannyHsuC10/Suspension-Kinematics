@@ -11,6 +11,7 @@ from tempfile import TemporaryDirectory
 
 import numpy as np
 
+from JacobianKinematicsLab.interference import INTERFERENCE_TOLERANCE_M, find_interferences
 from JacobianKinematicsLab.model import (
     CORNERS,
     EXAMPLES,
@@ -289,9 +290,12 @@ def _solve():
     global _result, _ratio
     project = _require_project()
     result = solve(project.model, make_motion(project.model, **project.motion))
+    interferences = find_interferences(project.model, result)
     frames = _wheel_frames(project)
     _result, _ratio = result, None
     return {"time": result.time, "position": result.position, "condition": result.condition,
+            "interferences": [asdict(entry) for entry in interferences],
+            "interference_tolerance_mm": INTERFERENCE_TOLERANCE_M * 1000,
             "wheel_normals": {corner: frame.normal(result.position) for corner, frame in frames.items()}}
 
 

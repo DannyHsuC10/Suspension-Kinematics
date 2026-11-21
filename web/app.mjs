@@ -73,7 +73,9 @@ const viewport = new MechanismViewport($('viewport'), pick);
 
 function rpc(operation, payload = {}) {
   if (!worker) {
-    worker = new Worker(new URL('./worker.js', import.meta.url));
+    const workerUrl = new URL('./worker.js', import.meta.url);
+    workerUrl.search = new URL(import.meta.url).search;
+    worker = new Worker(workerUrl);
     worker.onmessage = ({ data: { id, result, error } }) => {
       const job = pending.get(id);
       if (!job) return;
@@ -143,6 +145,7 @@ function markDirty() {
 function clearResults() {
   pause();
   result = sweepData = damperSweep = ratioData = undefined;
+  $('interference-warning').hidden = true;
   clearSignals();
   sample = 0;
 }
@@ -389,7 +392,7 @@ function syncSelection() {
 }
 
 function solve() {
-  return run('Solving position, velocity, and acceleration…', async () => {
+  return run('Solving kinematics and checking rod interference…', async () => {
     pause();
     const next = await rpc('solve');
     result = next;
@@ -408,7 +411,43 @@ function solve() {
     viewport.setBounds(bounds);
     setSample(0);
     status('Solved ' + result.time.length + ' samples over ' + result.time.at(-1) + ' s.');
+    const pairs = result.interferences.length;
+    $('interference-warning').hidden = pairs === 0;
+    if (pairs) {
+      $('interference-warning').textContent = 'Rod interference (' + pairs + ')';
+      showInterferenceWarning();
+    }
   });
+}
+
+function inspectInterference(entry) {
+  $('interference-dialog').close();
+  pause();
+  selected.rod = [entry.rod_a, entry.rod_b];
+  lastPick = 'rod';
+  setTab('motion');
+  setComparison(true);
+  setSample(entry.first_sample);
+}
+
+function showInterferenceWarning() {
+  const pairs = result.interferences;
+  $('interference-detail').textContent =
+    'Rod centerlines came within ' + result.interference_tolerance_mm +
+    ' mm at sampled poses. Select Inspect to highlight the pair at its first affected sample.';
+  const rows = pairs.map(entry => {
+    const inspect = el('button', { type: 'button', 'aria-label': 'Inspect ' + entry.rod_a + ' and ' + entry.rod_b }, 'Inspect');
+    inspect.addEventListener('click', () => inspectInterference(entry));
+    return el('tr', {}, el('th', { scope: 'row' }, entry.rod_a), el('td', {}, entry.rod_b),
+      el('td', {}, display(result.time[entry.first_sample], 6)),
+      el('td', {}, display(result.time[entry.last_sample], 6)),
+      el('td', {}, String(entry.sample_count)), el('td', {}, display(entry.minimum_distance_m * 1000)),
+      el('td', {}, inspect));
+  });
+  $('interference-pairs').replaceChildren(tableWithHeadings(
+    ['Rod A', 'Rod B', 'First time (s)', 'Last time (s)', 'Samples', 'Minimum gap (mm)', '3D view'],
+    rows, 'Rod interference pairs'));
+  $('interference-dialog').showModal();
 }
 
 const pointMetrics = {
@@ -889,6 +928,7 @@ function submit(id, action) {
 }
 
 on('solve', 'click', solve);
+on('interference-warning', 'click', showInterferenceWarning);
 on('edit-motion', 'click', editMotion);
 submit('motion-form', applyMotion);
 on('bump-preset', 'click', () => applyPreset(1));

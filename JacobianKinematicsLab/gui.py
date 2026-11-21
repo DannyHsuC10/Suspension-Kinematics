@@ -10,6 +10,7 @@ from tkinter import filedialog, font, messagebox, ttk
 import numpy as np
 
 from .geometry_editor import DeformableSettings, GeometrySettings
+from .interference import INTERFERENCE_TOLERANCE_M, find_interferences
 from .model import EXAMPLES, load_model, make_motion
 from .project import load_project, save_project
 from .results import damper_histories, export_results, motion_ratio
@@ -92,6 +93,11 @@ def closest_sample(time, target):
     if index == len(time) or (index > 0 and target - time[index - 1] < time[index] - target):
         index -= 1
     return index
+
+
+def _solve_with_interferences(model, motion):
+    result = solve(model, motion)
+    return result, find_interferences(model, result)
 
 
 class SignalPlot(tk.Canvas):
@@ -647,6 +653,7 @@ class Workbench(ttk.Frame):
         style.configure("Treeview.Heading", background="#dfeaf0", font=(FONT, 10, "bold"))
         style.configure("Title.TLabel", font=(FONT, 21, "bold"))
         style.configure("Muted.TLabel", foreground=MUTED)
+        style.configure("Warning.TButton", foreground="#9a4a00")
         style.configure("Accent.TButton", background="#006a63", foreground="white")
         style.map("Accent.TButton", background=[("disabled", "#e0e8ed"), ("active", "#00554e")],
                   foreground=[("disabled", MUTED)])
@@ -664,6 +671,7 @@ class Workbench(ttk.Frame):
         self.project_name = tk.StringVar(self, value="尚未匯入")
         self.status = tk.StringVar(self)
         self.model = self.result = self.ratio = None
+        self.interferences = ()
         self.input_points = {}
         self.tires = {}
         self.options = {}
@@ -780,11 +788,23 @@ class Workbench(ttk.Frame):
         rate.bind("<<ComboboxSelected>>", self.change_play_rate)
         self.loop_motion = tk.BooleanVar(self)
         ttk.Checkbutton(bar, text="循環", variable=self.loop_motion).pack(side="left", padx=(8, 0))
+        self.interference_button = ttk.Button(
+            bar, command=self.seek_first_interference, style="Warning.TButton",
+        )
 
     def seek_sample(self, index):
         if self.result is not None:
             self.pause_playback()
             self.set_sample(index)
+
+    def seek_first_interference(self):
+        first = self.interferences[0]
+        self.tabs.select(self.geometry_tab)
+        self.seek_sample(first.first_sample)
+        self.compare_geometry.set(True)
+        self.set_geometry_selection("rod", (first.rod_a, first.rod_b))
+        time = self.result.time[first.first_sample]
+        self.status.set(f"桿件干涉 · {first.rod_a} 與 {first.rod_b} · {time:.6g} s")
 
     def set_sample(self, index):
         time = self.result.time
@@ -1363,6 +1383,8 @@ class Workbench(ttk.Frame):
     def clear_results(self, *, reset_selection=False):
         self.pause_playback()
         self.result = self.ratio = None
+        self.interferences = ()
+        self.interference_button.pack_forget()
         self.sample_index = 0
         self.timeline_position.set(0)
         self.timeline.configure(state="disabled", to=1)
@@ -1396,7 +1418,8 @@ class Workbench(ttk.Frame):
             messagebox.showerror("無法開始求解", str(error), parent=self.root)
             return
         self.clear_results()
-        self.begin_job(solve, (model, motion), self.install_result, f"正在求解 {model.name}…", "求解失敗")
+        self.begin_job(_solve_with_interferences, (model, motion), self.install_result,
+                       f"正在求解 {model.name} 並檢查桿件干涉…", "求解失敗")
 
     def begin_job(self, operation, args, install, working, error_title):
         self.job = SimpleQueue()
@@ -1434,7 +1457,8 @@ class Workbench(ttk.Frame):
             return
         install(result)
 
-    def install_result(self, result):
+    def install_result(self, solution):
+        result, self.interferences = solution
         self.result = result
         self.viewport.set_model(self.model, result.position, tires=self.tires)
         self.timeline.configure(state="normal", to=len(result.time) - 1)
@@ -1465,7 +1489,31 @@ class Workbench(ttk.Frame):
         self.sync_geometry_selection()
         self.set_sample(0)
         self.export_button.configure(state="normal")
-        self.status.set(f"{self.model.name} · {len(names)} 個節點 · {len(rods)} 根桿件 · {len(result.time)} 個樣本")
+        summary = f"{self.model.name} · {len(names)} 個節點 · {len(rods)} 根桿件 · {len(result.time)} 個樣本"
+        if self.interferences:
+            count = len(self.interferences)
+            summary += f" · {count} 組桿件干涉"
+            self.interference_button.configure(text=f"首處干涉（{count} 組）")
+            self.interference_button.pack(side="left", padx=(8, 0))
+        self.status.set(summary)
+        if self.interferences:
+            self.warn_interferences()
+
+    def warn_interferences(self):
+        limit = 6
+        names = [
+            f"{record.rod_a} 與 {record.rod_b} · 首次 {self.result.time[record.first_sample]:.6g} s"
+            for record in self.interferences[:limit]
+        ]
+        remaining = len(self.interferences) - len(names)
+        if remaining:
+            names.append(f"另有 {remaining} 組。")
+        tolerance = INTERFERENCE_TOLERANCE_M * 1000.
+        message = (f"求解完成。{len(self.interferences)} 組桿件的中心線在取樣姿態中相交"
+                   f"或距離在 {tolerance:g} mm 以內。\n\n"
+                   + "\n".join(names)
+                   + "\n\n可點「首處干涉」前往該時間的 3D 姿態。")
+        messagebox.showwarning("桿件干涉警告", message, parent=self.root)
 
     def set_default_pair(self, result, drives):
         names = self.model.point_names

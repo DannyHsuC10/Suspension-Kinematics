@@ -1,10 +1,11 @@
 const runtime = 'https://cdn.jsdelivr.net/pyodide/v0.27.7/full/';
 const packageName = 'JacobianKinematicsLab';
-const sources = ['__init__.py', 'model.py', 'project.py', 'results.py', 'solver.py', 'suspension.py',
+const sources = ['__init__.py', 'interference.py', 'model.py', 'project.py', 'results.py', 'solver.py', 'suspension.py',
   'wheel_frame.py', 'examples/hardpoints.csv', 'examples/reference_settings.json'];
+const revision = new URL(self.location.href).search;
 
 async function read(path) {
-  const response = await fetch(path);
+  const response = await fetch(path + revision);
   if (!response.ok) throw new Error(`Could not load ${path} (${response.status}).`);
   return new Uint8Array(await response.arrayBuffer());
 }

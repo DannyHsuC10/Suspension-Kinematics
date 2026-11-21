@@ -7,8 +7,8 @@
   <meta name="theme-color" content="#111d31">
   <title>SuspensionKinematicsLab</title>
   <link rel="icon" href="suspension-icon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="styles.css">
-  <script type="module" src="app.mjs?v=project-menu"></script>
+  <link rel="stylesheet" href="styles.css?v=rod-interference">
+  <script type="module" src="app.mjs?v=rod-interference"></script>
 </head>
 <body class="lab-page">
   <header class="app-header">
@@ -35,6 +35,7 @@
           <button type="button" class="primary" id="solve" data-engine disabled>Solve kinematics</button>
           <progress id="operation-progress" aria-label="Solver activity"></progress>
           <p id="status" role="status" aria-live="polite">Loading the Python solver and NumPy…</p>
+          <button type="button" id="interference-warning" class="warning-button" hidden>Rod interference</button>
           <button type="button" id="retry" hidden>Reload solver</button>
         </div>
         <section class="project-files" aria-label="Project files">
@@ -211,6 +212,13 @@
       </div>
       <footer><p id="motion-error" role="alert"></p><button class="primary">Apply motion</button></footer>
     </form>
+  </dialog>
+  <dialog id="interference-dialog" aria-labelledby="interference-title" aria-describedby="interference-detail">
+    <header class="dialog-title"><h2 id="interference-title">Rod interference warning</h2><button type="button" data-close="interference-dialog" autofocus>Close</button></header>
+    <div class="dialog-body">
+      <p class="help" id="interference-detail"></p>
+      <div id="interference-pairs"></div>
+    </div>
   </dialog>
 </body>
 </html>

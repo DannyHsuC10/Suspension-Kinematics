@@ -294,6 +294,10 @@
             </dd>
           </div>
           <div>
+            <dt>Rod interference</dt>
+            <dd>After a time-history solve, the lab compares modeled rod centerlines at each solved sample with a 0.01 mm tolerance. It skips shared joints and construction links. A warning lists the affected rod pairs and times. Choose <strong>Inspect</strong> to view the first affected sample in 3D. The check represents each rod as a line segment, so its findings depend on the model and the chosen sampling interval.</dd>
+          </div>
+          <div>
             <dt>Damper histories</dt>
             <dd>
               Let <var>ℓ</var> be the current length and <var>ℓ</var><sub>0</sub> the static length. Positive compression <var>c</var><sub>d</sub> means the member is shorter than at the reference pose. Positive compression velocity means it is shortening. With axis unit vector <strong>n</strong> and endpoint relative velocity <strong>v</strong> = <strong>ṙ</strong>, the solver uses
