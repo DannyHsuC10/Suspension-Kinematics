@@ -172,7 +172,7 @@ def _settings(project):
     return {"version": 1, "pushrod_mounts": dict(project.model.pushrod_mounts),
             "tires": {corner: asdict(setup) for corner, setup in project.tires.items()},
             "motion": project.motion,
-            "deformable_members": [asdict(member) for member in project.model.deformable_members]}
+            "deformable_members": [asdict(member) for member in project.model.editable_deformable_members]}
 
 
 def _install(project):
@@ -281,6 +281,8 @@ def _describe(project):
             "fixed": model.fixed, "links": [asdict(link) for link in model.links],
             "drives": [asdict(drive) for drive in model.drives], "internal_points": model.internal_points,
             "mechanism": project.mechanism, "reference_settings": reference, "wheels": wheels,
+            "deformable_members": [asdict(member) for member in model.deformable_members],
+            "direct_pushrod_corners": model.direct_pushrod_corners, "rocker_corners": model.rocker_corners,
             "sweep_corners": sweep_corners(model), "has_front_axle": has_front_axle(model),
             "steering_corners": [corner for corner in CORNERS if has_steering(model, corner)],
             "damper_axles": damper_axles(model)}
@@ -387,7 +389,7 @@ def _project_csv():
     with TemporaryDirectory() as directory:
         path = Path(directory) / "output.csv"
         saved = save_project(path, project.table, project.points, project.model.pushrod_mounts,
-                             project.tires, project.motion, project.model.deformable_members, update_source=False)
+                             project.tires, project.motion, project.model.editable_deformable_members, update_source=False)
     text = saved.content.decode("utf-8")
     if project.mechanism is not None:
         # The desktop CSV reader ignores additional project fields. Keep topology for browser round trips.
@@ -473,7 +475,8 @@ _DIAGNOSTICS = (
     (r"(.+) 的 FORWARD 需要搭配輪心 WC。", r"The \1 FORWARD marker requires a wheel center (WC)."),
     (r"前齒條需要 FL_RACK 的 Y 大於 FR_RACK，以定義向左為正的輸入。",
      r"FL_RACK Y must be greater than FR_RACK Y so leftward rack travel is positive."),
-    (r"(.+) 的推桿需提供一個 PUSH_OUT.+。", r"\1 needs one PUSH_OUT variant, PUSH_IN, ROCKER_A, and ROCKER_B."),
+    (r"(.+) 的推桿需提供一個 PUSH_OUT.+。", r"\1 needs one PUSH_OUT variant and PUSH_IN."),
+    (r"(.+) 的 ROCKER_A 與 ROCKER_B 必須同時提供或同時省略。", r"Provide both rocker pivot points for \1, or omit both for a direct-acting damper."),
     (r"(.+) 的推桿外端需選擇上 A 臂、下 A 臂或羊角。", r"The \1 pushrod must mount to UCA, LCA, or UPRIGHT."),
     (r"(.+) 的推桿外端要裝在羊角上，需提供輪心 WC 或轉向拉桿外端 TOE 定義羊角姿態。",
      r"The \1 upright mount needs WC or TOE to define its orientation."),

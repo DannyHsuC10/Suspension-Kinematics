@@ -13,7 +13,7 @@ WEB_FILES = (
 PACKAGE_FILES = (
     "__init__.py", "interference.py", "model.py", "project.py", "results.py", "solver.py",
     "suspension.py", "wheel_frame.py", "examples/hardpoints.csv",
-    "examples/reference_settings.json",
+    "examples/reference_settings.json", "examples/direct_pushrod.csv",
 )
 
 

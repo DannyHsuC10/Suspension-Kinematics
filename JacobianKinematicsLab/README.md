@@ -64,6 +64,8 @@ python -m JacobianKinematicsLab
 - 在「桿件」可選 `FL_WHEEL_HEADING`、`FR_WHEEL_HEADING` 等輪向參考線，方位角由車輛 +X 朝 +Y 為正。亦可查看 `FL_RACK-TOE`、`FL_PUSH_ROD` 等桿件的角度、角速度與角加速度。推桿兩端保持固定桿長，內端隨搖臂鉸鏈轉動。
 - 基本懸吊 CSV 仍可匯入。若當輪只有 A 臂硬點與輪心，會維持靜態輪向。只含六個 A 臂硬點時，行程輸入控制上球接點的 Z。舊表的 `UFI`、`URI`、`LFI`、`LRI`、`wheel_center`、`ROD_IN`、`ROD_OUT` 可直接匯入。
 
+同一輪位有推桿外端與 `PUSH_IN`，且同時省略 `ROCKER_A` 與 `ROCKER_B` 時，工具會提示採用直推避震器設計。在 `PUSH_IN` 固定車體端，並自動將 `<輪位>_PUSH_ROD` 建為可伸縮的變形元件，可在避震器行程檢視結果。只省略一個搖臂軸點會報錯。可用[直推測試硬點](examples/direct_pushrod.csv)試算。
+
 ## 變形元件
 
 按「變形元件…」開啟編輯視窗，為避震器等元件輸入名稱及 A、B 端點在靜態姿態下的車輛 XYZ 座標（mm）。每端可獨立選擇車體或一支已定義的搖臂（FL、FR、RL、RR）。車體端固定在輸入的座標，搖臂端隨該搖臂繞鉸鏈軸轉動。再次開啟視窗，可從清單選取既有元件修改或移除。

@@ -1222,7 +1222,7 @@ class Workbench(ttk.Frame):
             self.set_paths(path)
 
     def project_state(self):
-        return self.input_points, self.model.pushrod_mounts, self.tires, self.options, self.model.deformable_members
+        return self.input_points, self.model.pushrod_mounts, self.tires, self.options, self.model.editable_deformable_members
 
     @property
     def project_changed(self):
@@ -1301,6 +1301,13 @@ class Workbench(ttk.Frame):
         rack = "已定義前齒條" if has_rack else "可補上 RACK 和 TOE 啟用前齒條"
         pushrods = sum(link.name.endswith("_PUSH_ROD") for link in model.links)
         self.status.set(f"已載入靜態幾何 · {rack} · {pushrods} 支推桿")
+        if model.direct_pushrod_corners:
+            corners = "、".join(model.direct_pushrod_corners)
+            self.status.set(f"直推避震器配置 · {corners}")
+            messagebox.showwarning("直推避震器配置",
+                                   f"{corners} 未提供 ROCKER_A 與 ROCKER_B。PUSH_IN 已固定在車體。\n"
+                                   "推桿已設為變形元件（Deformable member），可伸縮以維持懸吊運動自由度。"
+                                   "目前使用直推避震器懸吊設計。", parent=self.root)
 
     def read_model(self):
         if self.model is None:
@@ -1317,7 +1324,7 @@ class Workbench(ttk.Frame):
         DeformableSettings(self.root, model, self.set_deformable_members)
 
     def set_deformable_members(self, members):
-        if members == self.model.deformable_members:
+        if members == self.model.editable_deformable_members:
             return
         self.model = load_model(self.hardpoint_path, self.mechanism, points=self.input_points,
                                 pushrod_mounts=dict(self.model.pushrod_mounts), deformable_members=members)
@@ -1346,7 +1353,7 @@ class Workbench(ttk.Frame):
                                 for previous in (self.tires.get(corner, TireSetup()),))
         if geometry_changed:
             model = load_model(self.hardpoint_path, self.mechanism, points=points,
-                               pushrod_mounts=pushrod_mounts, deformable_members=self.model.deformable_members)
+                               pushrod_mounts=pushrod_mounts, deformable_members=self.model.editable_deformable_members)
             self.model, self.input_points = model, points
         self.tires = tires
         self.update_project_name()

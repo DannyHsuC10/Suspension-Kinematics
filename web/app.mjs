@@ -261,6 +261,13 @@ function loadProject(payload) {
       setDamperType('scan');
     } else setTab('motion');
     status(visiblePoints().length + ' hardpoints · ' + next.links.length + ' links · Ready to solve');
+    if (next.direct_pushrod_corners.length) {
+      const corners = next.direct_pushrod_corners.join(', ');
+      status('Direct-acting damper suspension · ' + corners + ' · Ready to solve');
+      window.alert('Direct-acting damper suspension (' + corners + '). ROCKER_A and ROCKER_B are absent. '
+        + 'PUSH_IN is fixed to the chassis. Each pushrod is modeled as a Deformable member so it can change length '
+        + 'and preserve suspension freedom of movement.');
+    }
   }, error => {
     status(error.message, true);
     $('retry').hidden = Boolean(model);
@@ -852,7 +859,7 @@ function memberCard(member) {
   const name = el('input', { 'data-member-name': '', value: member.name, required: '' });
   const remove = el('button', { type: 'button' }, 'Remove');
   const card = el('section', { class: 'member-card' }, el('div', { class: 'member-title' }, labeled('Member name', name), remove));
-  const choices = [['CHASSIS', 'Chassis'], ...Object.keys(model.pushrod_mounts).map(corner => [corner, corner + ' rocker'])];
+  const choices = [['CHASSIS', 'Chassis'], ...model.rocker_corners.map(corner => [corner, corner + ' rocker'])];
   for (const end of ['a', 'b']) {
     const mount = el('select');
     selectOptions(mount, choices, member[end].mount);
@@ -865,7 +872,13 @@ function memberCard(member) {
 }
 
 function editMembers() {
-  $('member-fields').replaceChildren(...model.deformable_members.map(memberCard));
+  const automatic = new Set(model.direct_pushrod_corners.map(corner => corner + '_PUSH_ROD'));
+  const fields = model.deformable_members.filter(member => !automatic.has(member.name)).map(memberCard);
+  if (automatic.size) {
+    fields.unshift(el('p', { class: 'help' },
+      'Edit the hardpoints of direct-acting members in Hardpoints & tires. ' + [...automatic].join(', ')));
+  }
+  $('member-fields').replaceChildren(...fields);
   $('members-error').textContent = '';
   $('members-dialog').showModal();
 }

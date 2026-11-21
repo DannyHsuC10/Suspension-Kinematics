@@ -104,6 +104,16 @@ class Model:
     standard_suspension: bool = False
     pushrod_mounts: tuple[tuple[str, str], ...] = ()
     deformable_members: tuple[DeformableMember, ...] = ()
+    direct_pushrod_corners: tuple[str, ...] = ()
+
+    @property
+    def editable_deformable_members(self):
+        automatic = {f"{corner}_PUSH_ROD" for corner in self.direct_pushrod_corners}
+        return tuple(member for member in self.deformable_members if member.name not in automatic)
+
+    @property
+    def rocker_corners(self):
+        return tuple(corner for corner, _ in self.pushrod_mounts if corner not in self.direct_pushrod_corners)
 
 
 @dataclass(frozen=True)
@@ -222,13 +232,16 @@ def _upright(corner, local, points, links, drives, attachments):
     return anchors
 
 
-def _pushrod(corner, local, upright, fixed, links, attachments, mount):
+def _pushrod(corner, local, upright, points, fixed, links, attachments, mount, direct):
     outboard = [key for key in PUSH_OUTBOARD if key in local]
     if not outboard and not set(PUSH_INBOARD).intersection(local):
         return
-    if len(outboard) != 1 or not set(PUSH_INBOARD) <= local.keys():
+    if len(outboard) != 1 or "PUSH_IN" not in local:
         raise ValueError(f"{corner} 的推桿需提供一個 PUSH_OUT、PUSH_OUT_UCA 或 PUSH_OUT_UPRIGHT，"
-                         "以及 PUSH_IN、ROCKER_A、ROCKER_B。")
+                         "以及 PUSH_IN。")
+    rocker_points = {"ROCKER_A", "ROCKER_B"} & local.keys()
+    if len(rocker_points) == 1:
+        raise ValueError(f"{corner} 的 ROCKER_A 與 ROCKER_B 必須同時提供或同時省略。")
     out = outboard[0]
     mount = PUSH_OUTBOARD[out] if mount is None else mount
     body_anchors = {"LCA": ("LCA_F", "LCA_R", "LBJ"), "UCA": ("UCA_F", "UCA_R", "UBJ"), "UPRIGHT": upright}
@@ -238,6 +251,17 @@ def _pushrod(corner, local, upright, fixed, links, attachments, mount):
     if len(anchors) != 3:
         raise ValueError(f"{corner} 的推桿外端要裝在羊角上，需提供輪心 WC 或轉向拉桿外端 TOE 定義羊角姿態。")
     attachments.append(Attachment(local[out], *(local[a] for a in anchors)))
+    if not rocker_points:
+        outer, inner = local[out], local["PUSH_IN"]
+        name = f"{corner}_PUSH_ROD"
+        length = math.dist(points[outer], points[inner])
+        if not math.isfinite(length) or length == 0.:
+            raise ValueError(f"{name} 的靜態長度須大於零且為有限數值。")
+        fixed.append(inner)
+        links.append(Link(name, outer, inner, constrained=False))
+        direct[corner] = DeformableMember(name, DeformableEnd(points[outer], mount),
+                                          DeformableEnd(points[inner]))
+        return mount
     a, b, inner = (local[key] for key in ROCKER_ANCHORS)
     fixed.extend((a, b))
     links.extend((Link(f"{corner}_PUSH_ROD", local[out], inner),
@@ -289,7 +313,7 @@ def _suspension_model(points, name, reference_settings=None, *, pushrod_mounts=N
     imported = set(canonical)
     fixed, links, drives, attachments = [], [], [], []
     overrides = pushrod_mounts or {}
-    mounts = {}
+    mounts, direct = {}, {}
     bump = reference_settings.bump_mm if reference_settings else 25.
     for corner in CORNERS:
         local = {name[len(corner) + 1:]: name for name in canonical if name.startswith(corner + "_")}
@@ -308,7 +332,7 @@ def _suspension_model(points, name, reference_settings=None, *, pushrod_mounts=N
             members.append(("RACK", "TOE"))
         links.extend(Link(f"{corner}_{a}-{b}", local[a], local[b]) for a, b in members)
         anchors = _upright(corner, local, canonical, links, drives, attachments)
-        mount = _pushrod(corner, local, anchors, fixed, links, attachments, overrides.get(corner))
+        mount = _pushrod(corner, local, anchors, canonical, fixed, links, attachments, overrides.get(corner), direct)
         if mount is not None:
             mounts[corner] = mount
         target = local.get("WC", local["UBJ"])
@@ -319,10 +343,11 @@ def _suspension_model(points, name, reference_settings=None, *, pushrod_mounts=N
         raise ValueError(f"{', '.join(sorted(missing_pushrods))} 沒有可設定的推桿。")
     _front_rack(canonical, links, drives)
     samples = reference_settings.samples if reference_settings else 121
-    return _model(name, canonical, fixed, links, drives, samples=samples, attachments=attachments,
+    model = _model(name, canonical, fixed, links, drives, samples=samples, attachments=attachments,
                   reference_settings=reference_settings,
                   internal_points=(name for name in canonical if name not in imported), standard_suspension=True,
                   pushrod_mounts=mounts.items())
+    return replace(model, direct_pushrod_corners=tuple(direct), deformable_members=tuple(direct.values()))
 
 
 def _mapping(value, allowed, required, label):
@@ -458,7 +483,7 @@ def _add_deformable_members(model, members):
     members = tuple(members)
     if not members:
         return model
-    rocker_corners = dict(model.pushrod_mounts)
+    rocker_corners = model.rocker_corners
     point_names = {name.casefold() for name in model.point_names}
     link_names = {link.name.casefold() for link in model.links}
     points, fixed, links, attachments, definitions = {}, [], [], [], []
@@ -495,7 +520,7 @@ def _add_deformable_members(model, members):
     reference.setflags(write=False)
     return replace(model, point_names=(*model.point_names, *points), reference=reference,
                    fixed=(*model.fixed, *fixed), links=(*model.links, *links),
-                   attachments=(*model.attachments, *attachments), deformable_members=tuple(definitions))
+                   attachments=(*model.attachments, *attachments), deformable_members=(*model.deformable_members, *definitions))
 
 
 def load_model(hardpoints_path, mechanism_path=None, *, points=None, pushrod_mounts=None, deformable_members=()):

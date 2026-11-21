@@ -160,7 +160,7 @@ class DeformableSettings(tk.Toplevel):
         self.transient(parent)
         self.title("變形元件")
         self.resizable(False, False)
-        self.members = model.deformable_members
+        self.members = model.editable_deformable_members
         self.on_apply = on_apply
         used_names = {link.name.casefold() for link in model.links}
         self.default_name = next(f"DAMPER_{i}" for i in range(1, len(used_names) + 2)
@@ -185,7 +185,10 @@ class DeformableSettings(tk.Toplevel):
         name_entry.pack(side="left", fill="x", expand=True)
         ttk.Label(body, text="輸入兩端的靜態車輛座標，並各自選擇固定位置。").pack(anchor="w")
 
-        rockers = dict(model.pushrod_mounts)
+        if model.direct_pushrod_corners:
+            names = "、".join(f"{corner}_PUSH_ROD" for corner in model.direct_pushrod_corners)
+            ttk.Label(body, text=f"直推元件 {names} 由硬點設定編輯。", wraplength=500).pack(anchor="w")
+        rockers = model.rocker_corners
         self.ends = []
         for label in "AB":
             frame = ttk.LabelFrame(body, text=f"端點 {label}", padding=8)

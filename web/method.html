@@ -67,6 +67,7 @@
             </tbody>
           </table>
         </div>
+        <p>For a direct-acting damper, provide a pushrod outboard point and a chassis-side <code>PUSH_IN</code>, and omit both <code>ROCKER_A</code> and <code>ROCKER_B</code>. The lab warns that it has created a deformable member and reports its travel under <strong>Dampers</strong>. <a href="JacobianKinematicsLab/examples/direct_pushrod.csv" download>Download the four-corner direct-acting example CSV</a>.</p>
         <p>Tire toe and camber in <strong>Hardpoints &amp; tires</strong> set the static tire orientation relative to the upright. Positive toe is toe-in and positive camber tilts the top of the wheel outward. A blank toe field takes the horizontal heading from <code>FORWARD</code>, or zero degrees when no heading marker was supplied.</p>
         <p>A project JSON stores hardpoints under <code>points</code> as names mapped to XYZ arrays in metres. The full format uses <code>"version": 1</code> and adds tire setup, pushrod mounts, drive profiles, and deformable members. Deformable endpoints also use metres in JSON. A desktop project CSV stores settings in its <code>jacobian_project</code> column.</p>
         <p>For a custom mechanism, use <strong>Import CSV / JSON</strong> to open a complete project JSON with a <code>mechanism</code> field, or select a hardpoint CSV and its matching mechanism JSON together.</p>
