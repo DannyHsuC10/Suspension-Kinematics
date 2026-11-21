@@ -391,16 +391,21 @@ def _read_reference_settings():
                              bump, droop, samples)
 
 
-def _read_mechanism(points, path):
-    with Path(path).open(encoding="utf-8-sig") as handle:
-        data = json.load(handle)
+def _read_mechanism(points, source, default_name):
+    if isinstance(source, dict):
+        data = source
+    else:
+        path = Path(source)
+        with path.open(encoding="utf-8-sig") as handle:
+            data = json.load(handle)
+        default_name = path.stem
     if isinstance(data, dict) and {"vehicle", "front", "rear"} <= data.keys():
         raise ValueError("此檔案是基準車輛參數 JSON。--mechanism 需要與硬點 CSV 配對的機構 JSON。")
     data = _mapping(data, ("schema_version", "name", "fixed", "links", "drives", "attachments",
                            "duration_s", "samples"), ("fixed", "links", "drives"), "機構")
     if type(data.get("schema_version", 1)) is not int or data.get("schema_version", 1) != 1:
         raise ValueError("機構 JSON 需要 schema_version 1。")
-    name = _name(data.get("name", Path(path).stem), "機構")
+    name = _name(data.get("name", default_name), "機構")
     fixed = tuple(_known_point(p, points, "固定點") for p in _array(data["fixed"], "fixed"))
     if len(set(fixed)) != len(fixed):
         raise ValueError("機構 JSON 有重複固定點。")
@@ -494,7 +499,7 @@ def _add_deformable_members(model, members):
 
 
 def load_model(hardpoints_path, mechanism_path=None, *, points=None, pushrod_mounts=None, deformable_members=()):
-    """Load spatial hardpoints and an optional explicit mechanism definition."""
+    """Load hardpoints and an optional mechanism from a JSON file or object."""
     try:
         path = Path(hardpoints_path)
         if points is None:
@@ -502,7 +507,7 @@ def load_model(hardpoints_path, mechanism_path=None, *, points=None, pushrod_mou
         if mechanism_path is not None:
             if pushrod_mounts:
                 raise ValueError("自訂機構的推桿接法由機構 JSON 定義。")
-            model = _read_mechanism(points, mechanism_path)
+            model = _read_mechanism(points, mechanism_path, path.stem)
         else:
             settings = _read_reference_settings() if path.resolve() == EXAMPLES / "hardpoints.csv" else None
             model = _suspension_model(points, settings.name if settings else path.stem, settings,

@@ -11,7 +11,7 @@ from .solver import solve
 
 def main():
     parser = argparse.ArgumentParser(description="獨立硬點運動學解算器")
-    parser.add_argument("--hardpoints", type=Path, help="硬點 CSV，省略時使用內附懸吊範例")
+    parser.add_argument("--hardpoints", type=Path, help="硬點 CSV 或專案 JSON，省略時使用內附懸吊範例")
     parser.add_argument("--mechanism", type=Path, help="自訂機構 JSON")
     parser.add_argument("--output", type=Path, help="直接求解並將結果寫入指定資料夾")
     parser.add_argument("--duration", type=float, help="工況秒數")

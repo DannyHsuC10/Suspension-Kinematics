@@ -12,7 +12,7 @@ import numpy as np
 from .geometry_editor import DeformableSettings, GeometrySettings
 from .interference import INTERFERENCE_TOLERANCE_M, find_interferences
 from .model import EXAMPLES, load_model, make_motion
-from .project import load_project, save_project
+from .project import JsonProject, load_project, save_project
 from .results import damper_histories, export_results, motion_ratio
 from .solver import solve
 from .suspension import (
@@ -36,6 +36,7 @@ PROFILE_LABELS = {"pulse": "往返", "sine": "正弦", "ramp": "線性"}
 CORNER_LABELS = {"FL": "左前", "FR": "右前", "RL": "左後", "RR": "右後"}
 DEFAULT_HARDPOINTS = EXAMPLES / "hardpoints.csv"
 CSV_FILE_TYPES = (("硬點表 CSV", "*.csv"), ("所有檔案", "*.*"))
+PROJECT_FILE_TYPES = (("懸吊專案 CSV / JSON", ("*.csv", "*.json")), *CSV_FILE_TYPES)
 POINT_FIELDS = {
     "位置": ("position", "mm", None),
     "相對位移": ("displacement", "mm", "總位移"),
@@ -666,7 +667,7 @@ class Workbench(ttk.Frame):
         self.pack(fill="both", expand=True)
 
         self.hardpoint_path = None
-        self.hardpoint_table = None
+        self.project_source = None
         self.saved_project = None
         self.project_name = tk.StringVar(self, value="尚未匯入")
         self.status = tk.StringVar(self)
@@ -710,7 +711,7 @@ class Workbench(ttk.Frame):
         ttk.Label(heading, text="Jacobian 運動學工作台", style="Title.TLabel").pack(side="left")
         files = ttk.Frame(heading)
         files.pack(side="right")
-        open_button = ttk.Button(files, text="匯入 CSV…", command=self.choose_hardpoints)
+        open_button = ttk.Button(files, text="匯入 CSV / JSON…", command=self.choose_hardpoints)
         open_button.pack(side="left")
         ttk.Label(files, textvariable=self.project_name, style="Muted.TLabel", width=32).pack(side="left", padx=8)
         self.save_button = ttk.Button(files, text="存檔", command=self.save_current_project, state="disabled")
@@ -1214,9 +1215,9 @@ class Workbench(ttk.Frame):
     def choose_hardpoints(self):
         if self.job is not None or self.root.grab_current() is not None:
             return
-        path = filedialog.askopenfilename(parent=self.root, title="選擇硬點表 CSV",
+        path = filedialog.askopenfilename(parent=self.root, title="選擇懸吊專案",
                                          initialdir=str(self.hardpoint_path.parent) if self.hardpoint_path else None,
-                                         filetypes=CSV_FILE_TYPES)
+                                         filetypes=PROJECT_FILE_TYPES)
         if path and self.confirm_project_changes():
             self.set_paths(path)
 
@@ -1249,7 +1250,7 @@ class Workbench(ttk.Frame):
                 messagebox.showerror("請另存專案", "請選擇新的 CSV 檔名來儲存專案。", parent=self.root)
                 return False
         try:
-            self.hardpoint_table = save_project(path, self.hardpoint_table, *self.project_state(),
+            self.project_source = save_project(path, self.project_source, *self.project_state(),
                                                 update_source=update_source)
         except (OSError, ValueError) as error:
             messagebox.showerror("存檔失敗", str(error), parent=self.root)
@@ -1280,12 +1281,13 @@ class Workbench(ttk.Frame):
     def set_paths(self, hardpoints, mechanism=None):
         try:
             path = Path(hardpoints).resolve()
-            table, model, tires, options = load_project(path, mechanism)
+            source, model, tires, options = load_project(path, mechanism)
         except (OSError, ValueError, RuntimeError) as error:
             self.status.set(str(error))
             return
-        self.hardpoint_path, self.hardpoint_table, self.mechanism = path, table, mechanism
-        self.model, self.input_points, self.tires, self.options = model, table.points, tires, options
+        self.hardpoint_path, self.project_source = path, source
+        self.mechanism = source.mechanism if isinstance(source, JsonProject) else mechanism
+        self.model, self.input_points, self.tires, self.options = model, source.points, tires, options
         self.saved_project = self.project_state()
         self.update_project_name()
         self.save_button.configure(state="normal")
@@ -1302,7 +1304,7 @@ class Workbench(ttk.Frame):
 
     def read_model(self):
         if self.model is None:
-            raise ValueError("請選擇有效的硬點 CSV 檔案。")
+            raise ValueError("請選擇有效的 CSV 或 JSON 懸吊專案。")
         return self.model
 
     def configure_deformable(self):

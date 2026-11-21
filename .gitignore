@@ -221,3 +221,15 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Generated artifacts from Inverse_dynamics_optimization
+/Inverse_dynamics_optimization/**/figures/*.png
+/Inverse_dynamics_optimization/**/figures/*.jpg
+/Inverse_dynamics_optimization/**/figures/*.jpeg
+/Inverse_dynamics_optimization/**/figures/*.svg
+/Inverse_dynamics_optimization/**/figures/*.pdf
+/Inverse_dynamics_optimization/Model_Analysis/output/output_*.csv
+/Inverse_dynamics_optimization/Model_Analysis/output/rod_forces_*.csv
+/Inverse_dynamics_optimization/Model_Analysis/output/static_report_*.txt
+/Inverse_dynamics_optimization/Model_Analysis/output/position_output.csv
+/Inverse_dynamics_optimization/outcmaes/
