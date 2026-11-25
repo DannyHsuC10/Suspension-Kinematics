@@ -946,6 +946,8 @@ on('edit-motion', 'click', editMotion);
 submit('motion-form', applyMotion);
 on('bump-preset', 'click', () => applyPreset(1));
 on('droop-preset', 'click', () => applyPreset(-1));
+on('import-json', 'click', () => $('json-file').click());
+on('json-file', 'change', event => { void importFiles(event); });
 on('import-project', 'click', () => $('project-file').click());
 on('project-file', 'change', event => { void importFiles(event); });
 on('download-json', 'click', () => { void saveProject('json'); });

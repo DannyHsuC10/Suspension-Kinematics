@@ -25,7 +25,9 @@ from JacobianKinematicsLab.project import (
     _project_column,
     _read_deformable_members,
     _read_settings,
+    kinematics_project_data,
     save_project,
+    with_hardpoint_exchange,
 )
 from JacobianKinematicsLab.results import _write_csv, damper_histories, export_results, motion_ratio
 from JacobianKinematicsLab.solver import solve
@@ -216,7 +218,7 @@ def _load(text=None, filename=None, mechanism=None, example=None):
     if not filename or filename in (".", ".."):
         filename = "project"
     if filename.lower().endswith(".json") or text.lstrip("\ufeff \t\r\n").startswith("{"):
-        data = _json_object(text, "Project")
+        data = kinematics_project_data(_json_object(text, "Project"))
         if "points" not in data:
             raise ValueError("Select a complete project JSON or select a mechanism JSON with its hardpoint CSV.")
         if type(data.get("version", 1)) is not int or data.get("version", 1) != 1:
@@ -380,7 +382,8 @@ def _project_json():
     data = {**_settings(project), "points": project.points}
     if project.mechanism is not None:
         data["mechanism"] = project.mechanism
-    return {"name": f"{Path(project.filename).stem}.json", "text": json.dumps(data, indent=2, ensure_ascii=False) + "\n"}
+    text = json.dumps(with_hardpoint_exchange(data), indent=2, ensure_ascii=False, allow_nan=False) + "\n"
+    return {"name": f"{Path(project.filename).stem}.json", "text": text}
 
 
 def _project_csv():

@@ -1236,18 +1236,20 @@ class Workbench(ttk.Frame):
         if self.model is None or self.root.grab_current() is not None:
             return False
         path = self.hardpoint_path
-        update_source = path != DEFAULT_HARDPOINTS.resolve()
+        json_project = isinstance(self.project_source, JsonProject)
+        update_source = path != DEFAULT_HARDPOINTS.resolve() and (not json_project or self.project_source.native)
         if not update_source:
+            extension = ".json" if json_project else ".csv"
             projects = EXAMPLES.parent / "projects"
             chosen = filedialog.asksaveasfilename(parent=self.root, title="另存懸吊專案",
                                                   initialdir=str(projects if projects.is_dir() else EXAMPLES.parent),
-                                                  initialfile="suspension_project.csv", defaultextension=".csv",
-                                                  filetypes=CSV_FILE_TYPES)
+                                                  initialfile=f"suspension_project{extension}", defaultextension=extension,
+                                                  filetypes=(("JSON project", "*.json"),) if json_project else CSV_FILE_TYPES)
             if not chosen:
                 return False
             path = Path(chosen).resolve()
-            if path == DEFAULT_HARDPOINTS.resolve():
-                messagebox.showerror("請另存專案", "請選擇新的 CSV 檔名來儲存專案。", parent=self.root)
+            if path in (self.hardpoint_path, DEFAULT_HARDPOINTS.resolve()):
+                messagebox.showerror("請另存專案", "請選擇新的檔名來儲存專案。", parent=self.root)
                 return False
         try:
             self.project_source = save_project(path, self.project_source, *self.project_state(),

@@ -57,7 +57,11 @@ label :is(input, select) { width: 100%; }
 .brand-mark { display: block; flex: none; }
 .eyebrow { font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .11em; color: var(--accent); }
 .app-header .eyebrow { color: #86dbc9; margin-bottom: .12rem; }
-.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: .45rem; }
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: .45rem; margin-inline-start: auto; }
+.header-project-actions { display: flex; flex-wrap: wrap; gap: .45rem; }
+.header-project-actions button { background: #f3f7fb; }
+.header-project-actions button:enabled:hover { background: #ebf4f6; }
+
 .nav-link { color: #eaf1fb; text-decoration: none; padding: .46rem .75rem; border-radius: 6px; border: 1px solid #506179; font-size: .875rem; font-weight: 600; }
 .nav-link:hover, .nav-link[aria-current=page] { background: #263852; border-color: #7898a5; }
 main { max-width: 1700px; margin: auto; padding: 1rem clamp(1rem, 3vw, 3rem) 2.25rem; }

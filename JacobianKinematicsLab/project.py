@@ -10,11 +10,14 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 from .model import (
-    CORNERS, DeformableEnd, DeformableMember, _name, _number, load_model, make_motion, read_hardpoint_table,
+    ALIASES, CONSTRUCTION_POINTS, CORNERS, JOINTS, MOUNTS, PUSH_INBOARD, PUSH_OUTBOARD,
+    DeformableEnd, DeformableMember, _name, _number, load_model, make_motion, read_hardpoint_table,
 )
 from .wheel_frame import TireSetup
 
 
+EXCHANGE_KEY = "hardpoint_exchange"
+EXCHANGE_FORMAT = "SuspensionHardpoints"
 PROJECT_COLUMN = "jacobian_project"
 PROJECT_SECTIONS = ("pushrod_mounts", "tires", "motion")
 JSON_PROJECT_FIELDS = {*PROJECT_SECTIONS, "version", "points", "deformable_members", "mechanism"}
@@ -25,6 +28,7 @@ class JsonProject:
     points: dict[str, tuple[float, float, float]]
     content: bytes
     mechanism: dict | None
+    native: bool = True
 
 
 def _project_column(headers):
@@ -78,9 +82,43 @@ def _decode_json_object(content, label):
     return data
 
 
+def with_hardpoint_exchange(data):
+    exchange = {"format": EXCHANGE_FORMAT, "version": 1, "points": data["points"]}
+    for key in ("pushrod_mounts", "tires", "deformable_members"):
+        if key in data:
+            exchange[key] = data[key]
+    return {**data, EXCHANGE_KEY: exchange}
+
+
+def kinematics_project_data(data):
+    exchange = data.get(EXCHANGE_KEY)
+    if data.get("format") == EXCHANGE_FORMAT:
+        exchange = data
+    elif "points" in data and "format" not in data:
+        return {key: value for key, value in data.items() if key != EXCHANGE_KEY}
+    elif EXCHANGE_KEY not in data:
+        return data
+    if (not isinstance(exchange, dict) or exchange.get("format") != EXCHANGE_FORMAT
+            or type(exchange.get("version")) is not int or exchange["version"] != 1
+            or not isinstance(exchange.get("points"), dict)):
+        raise ValueError("需要 SuspensionHardpoints v1 硬點 JSON。")
+    allowed = set(MOUNTS + JOINTS + ("WC", "FORWARD", "RACK", "TOE") + PUSH_INBOARD)
+    allowed.update(PUSH_OUTBOARD, CONSTRUCTION_POINTS)
+    points = {}
+    for name, xyz in exchange["points"].items():
+        corner, _, suffix = name.upper().partition("_")
+        if corner in CORNERS and ALIASES.get(suffix, suffix) in allowed:
+            points[name] = xyz
+    return {"version": 1, "points": points, **{
+        key: exchange[key] for key in ("pushrod_mounts", "tires", "deformable_members") if key in exchange
+    }}
+
+
 def _read_json_project(path, mechanism):
     content = path.read_bytes()
-    data = _decode_json_object(content, "專案 JSON")
+    source = _decode_json_object(content, "專案 JSON")
+    native = "format" not in source and "points" in source
+    data = kinematics_project_data(source)
     if "points" not in data:
         raise ValueError("專案 JSON 缺少 points。請選擇網頁的 Download JSON 專案檔。")
     version = data.get("version", 1)
@@ -106,7 +144,7 @@ def _read_json_project(path, mechanism):
     elif not isinstance(mechanism, dict):
         mechanism_path = Path(mechanism)
         mechanism = {"name": mechanism_path.stem, **_decode_json_object(mechanism_path.read_bytes(), "機構 JSON")}
-    return JsonProject(points, content, mechanism), data
+    return JsonProject(points, content, mechanism, native), data
 
 
 def load_project(path, mechanism=None):
@@ -174,10 +212,10 @@ def save_project(path, table, points, mounts, tires, motion, deformable_members=
         settings["points"] = points
         if table.mechanism is not None:
             settings["mechanism"] = table.mechanism
-        text = json.dumps(settings, ensure_ascii=False, allow_nan=False, indent=2) + "\n"
+        text = json.dumps(with_hardpoint_exchange(settings), ensure_ascii=False, allow_nan=False, indent=2) + "\n"
         content = text.encode(encoding)
         _write_project(path, table.content, content, update_source, "JSON")
-        return replace(table, points=points, content=content)
+        return replace(table, points=points, content=content, native=True)
     if path.suffix.lower() == ".json":
         raise ValueError("請使用 .csv 副檔名儲存 CSV 專案。")
 
